@@ -21,7 +21,7 @@ if __name__ == '__main__':
     """
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
-    train_model = False
+    train_model = True
     im_x = 50
     im_y = 50 
     model_type = 'CNN'
@@ -42,9 +42,8 @@ if __name__ == '__main__':
     dataset = mat_data['ShapeSpace']
     dataset = dataset.astype(np.float32)
     dataset = dataset[:256]
-    train_dataset, test_dataset = train_test_split(dataset, test_size=0.1, random_state=42)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
-    test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
+
+    ### load training and testing data from dataset, testing data account for 10% (asking an LLM to help you)
         
     model = Model(x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y).to(device)
 
