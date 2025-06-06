@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from FNO_2d import FNO2d
 
 class Model(nn.Module):
     def __init__(self,x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y):
