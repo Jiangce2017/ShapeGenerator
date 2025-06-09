@@ -17,4 +17,8 @@ def loss_function(x, x_hat, mean, log_var):
     
     
 def load_mat(filename):
-### write a load_mat code here (you can ask an LLM)
+    with h5py.File(filename, 'r') as f:
+        data = {}
+        for k, v in f.items():
+            data[k] = v[:]  # Load data into memory
+    return data
