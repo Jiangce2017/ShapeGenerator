@@ -28,7 +28,7 @@ if __name__ == '__main__':
     dataset_path = './datasets/Wang/ShapeSpace.mat'
     batch_size = 32
     x_dim  = 2500
-    hidden_dim = 32
+    hidden_dim = 16
     latent_dim = 16
     lr = 1e-3
     epochs = 30
@@ -41,12 +41,16 @@ if __name__ == '__main__':
     mat_data = load_mat(dataset_path)
     dataset = mat_data['ShapeSpace']
     dataset = dataset.astype(np.float32)
-    dataset = dataset[:256]
+    dataset = dataset[:1024]
     train_dataset, test_dataset = train_test_split(dataset, test_size=0.1, random_state=42)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
         
     model = Model(x_dim, hidden_dim, latent_dim, device,model_type, im_x, im_y).to(device)
+
+    best_loss = float('inf')
+    patience = 5            # how many epochs to wait before stopping
+    patience_counter = 0    # how many bad epochs in a row
 
     if train_model:
         optimizer = Adam(model.parameters(), lr=lr)
@@ -62,7 +66,8 @@ if __name__ == '__main__':
 
                 x_hat, mean, log_var = model(x)
                 
-                print(f"mean std: {mean.std().item():.4f}, log_var std: {log_var.std().item():.4f}")
+                print("x_hat min:", x_hat.min().item(), "max:", x_hat.max().item())
+                print("Binarized match:", (x_hat > 0.5).float().eq(x).float().mean().item())
 
                 loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var)
                 
@@ -71,8 +76,23 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
                 
-            print("\tEpoch", epoch + 1, "complete!", "\tAverage Loss: ", overall_loss / (batch_idx*batch_size))
-            
+            avg_loss = overall_loss / (batch_idx * batch_size)
+            print(f"\tEpoch {epoch + 1} complete! \tAverage Loss: {avg_loss:.4f}")
+
+            # Early stopping logic
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+                patience_counter = 0
+                torch.save(model.state_dict(), './checkpoints/best_model.pth')
+                print("✅ New best model saved.")
+            else:
+                patience_counter += 1
+                print(f"⚠️  No improvement. Patience: {patience_counter}/{patience}")
+                
+                if patience_counter >= patience:
+                    print("⏹️  Early stopping triggered.")
+                    break
+
         print("Finish!!")
         torch.save(model, './checkpoints/metalattice_model.pth')
     

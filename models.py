@@ -142,6 +142,11 @@ class FNO_Encoder(nn.Module):
             self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
             self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
 
+            # Second set of frequency weights for second FNO block
+            self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+            self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+
+
             # Flatten and latent parameter layers
             self.flatten = nn.Flatten()
             self.layer_mean = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
@@ -168,6 +173,21 @@ class FNO_Encoder(nn.Module):
 
             x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
 
+            # Second Fourier block
+            x_ft = torch.fft.rfft2(x, norm='ortho')
+
+            real = x_ft.real[:, :, :self.freq_filter, :self.freq_filter]
+            imag = x_ft.imag[:, :, :self.freq_filter, :self.freq_filter]
+
+            real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real_2) \
+                    - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag_2)
+            imag_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_imag_2) \
+                    + torch.einsum("bchw,cdhw->bdhw", imag, self.weight_real_2)
+
+            x_ft = torch.complex(real_out, imag_out)
+            x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
+
+
             x_flat = self.flatten(x)  # shape: [B, hidden_dim * im_x * im_y]
             mean = self.layer_mean(x_flat)
             log_var = self.layer_variance(x_flat)
@@ -190,6 +210,10 @@ class FNO_Decoder(nn.Module):
         # Learnable frequency weights (real and imaginary)
         self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
         self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+
+        self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+        self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+
 
         # Down projection: map back to output_dim (e.g., 1 for grayscale image)
         self.output_proj = nn.Conv2d(hidden_dim, output_dim, kernel_size=1)
@@ -214,6 +238,21 @@ class FNO_Decoder(nn.Module):
 
         # Step 3: Inverse FFT to return to spatial domain
         x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
+
+        # Second Fourier block
+        x_ft = torch.fft.rfft2(x, norm='ortho')
+
+        real = x_ft.real[:, :, :self.freq_filter, :self.freq_filter]
+        imag = x_ft.imag[:, :, :self.freq_filter, :self.freq_filter]
+
+        real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real_2) \
+                - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag_2)
+        imag_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_imag_2) \
+                + torch.einsum("bchw,cdhw->bdhw", imag, self.weight_real_2)
+
+        x_ft = torch.complex(real_out, imag_out)
+        x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
+
 
         # Step 4: Project down to output channel (e.g., grayscale image)
         x_hat = self.output_proj(x)
