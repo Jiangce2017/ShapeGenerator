@@ -65,12 +65,16 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
                 x_hat, mean, log_var = model(x)
-                
-                print("x_hat min:", x_hat.min().item(), "max:", x_hat.max().item())
-                print("Binarized match:", (x_hat > 0.5).float().eq(x).float().mean().item())
 
-                loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var)
-                
+                # loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var)
+
+                loss = loss_function(x.view(batch_size, x_dim), x_hat.view(batch_size, x_dim), mean, log_var, beta=0.01, dice_weight=10.0)
+
+                # Eval: Binarized match rate
+                x_hat_bin = (x_hat > 0.5).float()
+                match = x_hat_bin.eq(x).float().mean().item()
+                print(f"Binarized match: {match:.4f}")
+
                 overall_loss += loss.item()
                 
                 loss.backward()
@@ -97,7 +101,14 @@ if __name__ == '__main__':
         torch.save(model, './checkpoints/metalattice_model.pth')
     
     else:
-        loaded_model = torch.load('./checkpoints/metalattice_model.pth')
+        # loaded_model = torch.load('./checkpoints/metalattice_model.pth')
+        # loaded_model.eval()
+        loaded_model = Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y).to(device)
+
+        # Load weights into that model
+        loaded_model.load_state_dict(torch.load('./checkpoints/best_model.pth'))
+
+        # Switch to evaluation mode
         loaded_model.eval()
         with torch.no_grad():
             for batch_idx, x in enumerate(tqdm(test_loader)):
