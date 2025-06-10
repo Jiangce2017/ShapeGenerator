@@ -121,22 +121,38 @@ class CNN_Decoder(nn.Module):
         x_hat = self.sigmoid(self.conv2(h))
         return x_hat   
 
-# class FNO_Encoder(nn.Module):
-#         def __init__(self, input_dim, hidden_dim, latent_dim,im_x,im_y):
-#             super(FNO_Encoder, self).__init__()
+class FNO_Encoder(nn.Module):
+        def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter=12):
+            super(FNO_Encoder, self).__init__()
+            self.hidden_dim = hidden_dim
+            self.im_x = im_x
+            self.im_y = im_y
+            self.freq_filter = freq_filter
+
+            # Up projection (1×1 convolution)
+            self.input_proj = nn.Conv2d(input_dim, hidden_dim, kernel_size=1)
+
+            # Learnable real and imaginary frequency weights
+            self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+            self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+
+            # Flatten and latent parameter layers
+            self.flatten = nn.Flatten()
+            self.layer_mean = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
+            self.layer_variance = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
 
 
             
-#         def forward(self, x):
-#             x = x.view(-1,1,self.im_x,self.im_y)
+        def forward(self, x):
+            x = x.view(-1,1,self.im_x,self.im_y)
 
-#             return mean, log_var
+            return mean, log_var
     
-# class FNO_Decoder(nn.Module):
-#     def __init__(self, latent_dim, hidden_dim, output_dim,im_x,im_y):
-#         super(FNO_Decoder, self).__init__()
+class FNO_Decoder(nn.Module):
+    def __init__(self, latent_dim, hidden_dim, output_dim,im_x,im_y):
+        super(FNO_Decoder, self).__init__()
 
         
-#     def forward(self, x):
+    def forward(self, x):
 
-#         return x_hat    
+        return x_hat    
