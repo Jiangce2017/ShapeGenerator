@@ -21,10 +21,10 @@ if __name__ == '__main__':
     """
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
-    train_model = True
+    train_model = False
     im_x = 50
     im_y = 50 
-    model_type = 'CNN'
+    model_type = 'FNO'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
     batch_size = 32
     x_dim  = 2500
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
         
-    model = Model(x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y).to(device)
+    model = Model(x_dim, hidden_dim, latent_dim, device,model_type, im_x, im_y).to(device)
 
     if train_model:
         optimizer = Adam(model.parameters(), lr=lr)
@@ -61,6 +61,8 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
                 x_hat, mean, log_var = model(x)
+                
+                print(f"mean std: {mean.std().item():.4f}, log_var std: {log_var.std().item():.4f}")
 
                 loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var)
                 

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+# # Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y)
+
 class Model(nn.Module):
     def __init__(self,x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y):
         super(Model, self).__init__()
@@ -12,8 +14,8 @@ class Model(nn.Module):
             self.Encoder = FL_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
             self.Decoder = FL_Decoder(latent_dim=latent_dim, hidden_dim = hidden_dim, output_dim = x_dim)
         elif model_type == 'FNO':
-            self.Encoder = FNO_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
-            self.Decoder = FNO_Decoder(latent_dim=latent_dim, hidden_dim = hidden_dim, output_dim = x_dim)
+            self.Encoder = FNO_Encoder(input_dim=1, hidden_dim=hidden_dim, latent_dim=latent_dim, im_x=im_x, im_y=im_y)
+            self.Decoder = FNO_Decoder(latent_dim=latent_dim, hidden_dim = hidden_dim, output_dim = 1, im_x=im_x, im_y=im_y)
         
     def reparameterization(self, mean, var):
         epsilon = torch.randn_like(var).to(self.device)        # sampling epsilon        
@@ -22,6 +24,8 @@ class Model(nn.Module):
         
     def forward(self, x):
         mean, log_var = self.Encoder(x)
+        log_var = torch.clamp(log_var, min=-4, max=4)  # add this line
+
         z = self.reparameterization(mean, torch.exp(0.5 * log_var)) # takes exponential function (log var -> var)
         x_hat = self.Decoder(z)
 
@@ -121,6 +125,8 @@ class CNN_Decoder(nn.Module):
         x_hat = self.sigmoid(self.conv2(h))
         return x_hat   
 
+
+
 class FNO_Encoder(nn.Module):
         def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter=12):
             super(FNO_Encoder, self).__init__()
@@ -129,7 +135,7 @@ class FNO_Encoder(nn.Module):
             self.im_y = im_y
             self.freq_filter = freq_filter
 
-            # Up projection (1×1 convolution)
+            # Up projection (1×1)
             self.input_proj = nn.Conv2d(input_dim, hidden_dim, kernel_size=1)
 
             # Learnable real and imaginary frequency weights
@@ -141,18 +147,76 @@ class FNO_Encoder(nn.Module):
             self.layer_mean = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
             self.layer_variance = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
 
-
             
         def forward(self, x):
             x = x.view(-1,1,self.im_x,self.im_y)
 
+            x = self.input_proj(x)
+            x_ft = torch.fft.rfft2(x, norm='ortho') 
+
+            real = x_ft.real[:, :, :self.freq_filter, :self.freq_filter]
+            imag = x_ft.imag[:, :, :self.freq_filter, :self.freq_filter]
+
+            # Matrix multiply each (real, imag) slice with learnable weights
+            real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real) \
+                    - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag)
+            imag_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_imag) \
+                    + torch.einsum("bchw,cdhw->bdhw", imag, self.weight_real)
+
+            # Reconstruct full frequency domain with filtered values
+            x_ft = torch.complex(real_out, imag_out)
+
+            x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
+
+            x_flat = self.flatten(x)  # shape: [B, hidden_dim * im_x * im_y]
+            mean = self.layer_mean(x_flat)
+            log_var = self.layer_variance(x_flat)
+
             return mean, log_var
     
 class FNO_Decoder(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, output_dim,im_x,im_y):
+    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter = 12):
         super(FNO_Decoder, self).__init__()
+        self.latent_dim = latent_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.im_x = im_x
+        self.im_y = im_y
+        self.freq_filter = freq_filter
 
+        # Map latent vector to full feature map
+        self.latent_to_feature = nn.Linear(latent_dim, hidden_dim * im_x * im_y)
+
+        # Learnable frequency weights (real and imaginary)
+        self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+        self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+
+        # Down projection: map back to output_dim (e.g., 1 for grayscale image)
+        self.output_proj = nn.Conv2d(hidden_dim, output_dim, kernel_size=1)
         
     def forward(self, x):
+        # Step 1: Linear projection from latent vector to full feature map
+        x = self.latent_to_feature(x)  # shape: [B, hidden_dim * im_x * im_y]
+        x = x.view(-1, self.hidden_dim, self.im_x, self.im_y)  # shape: [B, hidden_dim, H, W]
+
+        # Step 2: Apply frequency domain weights
+        x_ft = torch.fft.rfft2(x, norm='ortho')
+
+        real = x_ft.real[:, :, :self.freq_filter, :self.freq_filter]
+        imag = x_ft.imag[:, :, :self.freq_filter, :self.freq_filter]
+
+        real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real) \
+                 - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag)
+        imag_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_imag) \
+                 + torch.einsum("bchw,cdhw->bdhw", imag, self.weight_real)
+
+        x_ft = torch.complex(real_out, imag_out)
+
+        # Step 3: Inverse FFT to return to spatial domain
+        x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
+
+        # Step 4: Project down to output channel (e.g., grayscale image)
+        x_hat = self.output_proj(x)
+        x_hat = torch.sigmoid(x_hat)
 
         return x_hat    

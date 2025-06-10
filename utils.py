@@ -12,7 +12,9 @@ def show_image(x):
 
 def loss_function(x, x_hat, mean, log_var):
     reproduction_loss = nn.functional.binary_cross_entropy(x_hat, x, reduction='sum')
-    KLD      = - 0.5 * torch.sum(1+ log_var - mean.pow(2) - log_var.exp())
+    Klog_var = torch.clamp(log_var, min=-10, max=10)  # double protection
+    KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+    KLD = torch.nan_to_num(KLD, nan=0.0, posinf=1e5, neginf=-1e5)
     return reproduction_loss + KLD
     
     
