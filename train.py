@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
-from torchvision.utils import save_image, make_grid
-from torchvision.datasets import MNIST
+#from torchvision.utils import save_image, make_grid
+#from torchvision.datasets import MNIST
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     train_model = False
     im_x = 50
     im_y = 50 
-    model_type = 'FNO'
+    model_type = 'CNN'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
     batch_size = 32
     x_dim  = 2500
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     mat_data = load_mat(dataset_path)
     dataset = mat_data['ShapeSpace']
     dataset = dataset.astype(np.float32)
-    dataset = dataset[:1024]
+    dataset = dataset[:256]
     train_dataset, test_dataset = train_test_split(dataset, test_size=0.1, random_state=42)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
@@ -51,6 +51,9 @@ if __name__ == '__main__':
     best_loss = float('inf')
     patience = 5            # how many epochs to wait before stopping
     patience_counter = 0    # how many bad epochs in a row
+
+    max_beta = 1.0
+    warmup_epochs = 2
 
     if train_model:
         optimizer = Adam(model.parameters(), lr=lr)
@@ -66,9 +69,8 @@ if __name__ == '__main__':
 
                 x_hat, mean, log_var = model(x)
 
-                # loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var)
-
-                loss = loss_function(x.view(batch_size, x_dim), x_hat.view(batch_size, x_dim), mean, log_var, beta=0.01, dice_weight=10.0)
+                beta = min(max_beta, epoch / warmup_epochs)
+                loss = loss_function(x.view(batch_size, x_dim), x_hat.view(batch_size, x_dim), mean, log_var, beta=beta, dice_weight=10.0)
 
                 # Eval: Binarized match rate
                 x_hat_bin = (x_hat > 0.5).float()
@@ -87,7 +89,7 @@ if __name__ == '__main__':
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 patience_counter = 0
-                torch.save(model.state_dict(), './checkpoints/best_model.pth')
+                torch.save(model, './checkpoints/best_model_weights.pth')
                 print("✅ New best model saved.")
             else:
                 patience_counter += 1
@@ -98,18 +100,15 @@ if __name__ == '__main__':
                     break
 
         print("Finish!!")
-        torch.save(model, './checkpoints/metalattice_model.pth')
+        torch.save(model, './checkpoints/best_model_full.pth')
     
     else:
-        # loaded_model = torch.load('./checkpoints/metalattice_model.pth')
-        # loaded_model.eval()
-        loaded_model = Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y).to(device)
-
-        # Load weights into that model
-        loaded_model.load_state_dict(torch.load('./checkpoints/best_model.pth'))
-
-        # Switch to evaluation mode
+        loaded_model = torch.load('./checkpoints/metalattice_model.pth')
         loaded_model.eval()
+        # loaded_model = Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y).to(device)
+        # state_dict = torch.load('./checkpoints/best_model_full.pth')  # this is just weights
+        # loaded_model.load_state_dict(state_dict)
+        # loaded_model.eval()
         with torch.no_grad():
             for batch_idx, x in enumerate(tqdm(test_loader)):
                 print(x.shape)
