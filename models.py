@@ -191,6 +191,7 @@ class FNO_Decoder(nn.Module):
         self.im_x = im_x
         self.im_y = im_y
         self.freq_filter_x = freq_filter_x
+        self.freq_filter_y = freq_filter_y
 
         # Map latent vector to full feature map
         self.latent_to_feature = nn.Linear(latent_dim, hidden_dim * im_x * im_y)

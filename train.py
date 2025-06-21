@@ -21,10 +21,10 @@ if __name__ == '__main__':
     """
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
-    train_model = False
+    train_model = True
     im_x = 50
     im_y = 50 
-    model_type = 'CNN'
+    model_type = 'FNO'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
     batch_size = 32
     x_dim  = 2500
