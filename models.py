@@ -129,23 +129,24 @@ class CNN_Decoder(nn.Module):
 
 
 class FNO_Encoder(nn.Module):
-        def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter=22):
+        def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x = 50, freq_filter_y = 26):
             super(FNO_Encoder, self).__init__()
             self.hidden_dim = hidden_dim
             self.im_x = im_x
             self.im_y = im_y
-            self.freq_filter = freq_filter
+            self.freq_filter_x = freq_filter_x
+            self.freq_filter_y = freq_filter_y
 
             # Up projection (1×1)
             self.input_proj = nn.Conv2d(input_dim, hidden_dim, kernel_size=1)
 
             # Learnable real and imaginary frequency weights
-            self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
-            self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+            self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+            self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
 
             # Second set of frequency weights for second FNO block
-            self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
-            self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+            self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+            self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
 
 
             # Flatten and latent parameter layers
@@ -160,8 +161,8 @@ class FNO_Encoder(nn.Module):
             x = self.input_proj(x)
             x_ft = torch.fft.rfft2(x, norm='ortho') 
 
-            real = x_ft.real[:, :, :self.freq_filter, :self.freq_filter]
-            imag = x_ft.imag[:, :, :self.freq_filter, :self.freq_filter]
+            real = x_ft.real[:, :, :self.freq_filter_x, :self.freq_filter_y]
+            imag = x_ft.imag[:, :, :self.freq_filter_x, :self.freq_filter_y]
 
             # Matrix multiply each (real, imag) slice with learnable weights
             real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real) \
@@ -182,24 +183,24 @@ class FNO_Encoder(nn.Module):
             return mean, log_var
     
 class FNO_Decoder(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter = 22):
+    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter_x = 50, freq_filter_y = 26):
         super(FNO_Decoder, self).__init__()
         self.latent_dim = latent_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.im_x = im_x
         self.im_y = im_y
-        self.freq_filter = freq_filter
+        self.freq_filter_x = freq_filter_x
 
         # Map latent vector to full feature map
         self.latent_to_feature = nn.Linear(latent_dim, hidden_dim * im_x * im_y)
 
         # Learnable frequency weights (real and imaginary)
-        self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
-        self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+        self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+        self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
 
-        self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
-        self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter, freq_filter))
+        self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+        self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
 
 
         # Down projection: map back to output_dim (e.g., 1 for grayscale image)
@@ -213,8 +214,8 @@ class FNO_Decoder(nn.Module):
         # Step 2: Apply frequency domain weights
         x_ft = torch.fft.rfft2(x, norm='ortho')
 
-        real = x_ft.real[:, :, :self.freq_filter, :self.freq_filter]
-        imag = x_ft.imag[:, :, :self.freq_filter, :self.freq_filter]
+        real = x_ft.real[:, :, :self.freq_filter_x, :self.freq_filter_y]
+        imag = x_ft.imag[:, :, :self.freq_filter_x, :self.freq_filter_y]
 
         real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real) \
                  - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag)
