@@ -128,7 +128,7 @@ class CNN_Decoder(nn.Module):
 
 
 class FNO_Encoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x=50, freq_filter_y=26):
+    def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x=32, freq_filter_y=16):
         super(FNO_Encoder, self).__init__()
         self.hidden_dim = hidden_dim
         self.im_x = im_x
@@ -155,7 +155,7 @@ class FNO_Encoder(nn.Module):
         self.layer_mean = nn.Linear(512, latent_dim)
         self.layer_variance = nn.Sequential(
             nn.Linear(512, latent_dim),
-            nn.Tanh()  # Restricts to [-1, 1]
+            # nn.Tanh()  # Restricts to [-1, 1]
         )
 
     def forward(self, x):
@@ -180,12 +180,12 @@ class FNO_Encoder(nn.Module):
         x_bottleneck = self.bottleneck(x)
 
         mean = self.layer_mean(x_bottleneck)
-        log_var = self.layer_variance(x_bottleneck) * 4  # Restricts to [-4, 4]
+        log_var = self.layer_variance(x_bottleneck) # * 2  # Restricts to [-2, 2]
 
         return mean, log_var
 
 class FNO_Decoder(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter_x = 50, freq_filter_y = 26):
+    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter_x = 32, freq_filter_y = 16):
         super(FNO_Decoder, self).__init__()
         self.latent_dim = latent_dim
         self.hidden_dim = hidden_dim
