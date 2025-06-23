@@ -25,7 +25,6 @@ class Model(nn.Module):
         
     def forward(self, x):
         mean, log_var = self.Encoder(x)
-        log_var = torch.clamp(log_var, min=-4, max=4)  # add this line
 
         z = self.reparameterization(mean, torch.exp(0.5 * log_var)) # takes exponential function (log var -> var)
         x_hat = self.Decoder(z)
@@ -129,59 +128,62 @@ class CNN_Decoder(nn.Module):
 
 
 class FNO_Encoder(nn.Module):
-        def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x = 50, freq_filter_y = 26):
-            super(FNO_Encoder, self).__init__()
-            self.hidden_dim = hidden_dim
-            self.im_x = im_x
-            self.im_y = im_y
-            self.freq_filter_x = freq_filter_x
-            self.freq_filter_y = freq_filter_y
+    def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x=50, freq_filter_y=26):
+        super(FNO_Encoder, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.im_x = im_x
+        self.im_y = im_y
+        self.freq_filter_x = freq_filter_x
+        self.freq_filter_y = freq_filter_y
 
-            # Up projection (1×1)
-            self.input_proj = nn.Conv2d(input_dim, hidden_dim, kernel_size=1)
+        # Up Projection
+        self.input_proj = nn.Conv2d(input_dim, hidden_dim, kernel_size=1)
 
-            # Learnable real and imaginary frequency weights
-            self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
-            self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+        # Weights
+        self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+        self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
 
-            # Second set of frequency weights for second FNO block
-            self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
-            self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
+        # 3. Post-Fourier processing
+        self.norm = nn.LayerNorm([hidden_dim, im_x, im_y])
+        self.bottleneck = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(hidden_dim * im_x * im_y, 512),
+            nn.ReLU()
+        )
 
+        # 4. Latent heads
+        self.layer_mean = nn.Linear(512, latent_dim)
+        self.layer_variance = nn.Sequential(
+            nn.Linear(512, latent_dim),
+            nn.Tanh()  # Restricts to [-1, 1]
+        )
 
-            # Flatten and latent parameter layers
-            self.flatten = nn.Flatten()
-            self.layer_mean = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
-            self.layer_variance = nn.Linear(hidden_dim * im_x * im_y, latent_dim)
+    def forward(self, x):
+        x = x.view(-1, 1, self.im_x, self.im_y)
+        x = self.input_proj(x)
 
-            
-        def forward(self, x):
-            x = x.view(-1,1,self.im_x,self.im_y)
+        # FFT block
+        x_ft = torch.fft.rfft2(x, norm='ortho')
+        real = x_ft.real[:, :, :self.freq_filter_x, :self.freq_filter_y]
+        imag = x_ft.imag[:, :, :self.freq_filter_x, :self.freq_filter_y]
 
-            x = self.input_proj(x)
-            x_ft = torch.fft.rfft2(x, norm='ortho') 
+        real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real) \
+                 - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag)
+        imag_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_imag) \
+                 + torch.einsum("bchw,cdhw->bdhw", imag, self.weight_real)
 
-            real = x_ft.real[:, :, :self.freq_filter_x, :self.freq_filter_y]
-            imag = x_ft.imag[:, :, :self.freq_filter_x, :self.freq_filter_y]
+        x_ft = torch.complex(real_out, imag_out)
+        x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
+        x = F.relu(x)
 
-            # Matrix multiply each (real, imag) slice with learnable weights
-            real_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_real) \
-                    - torch.einsum("bchw,cdhw->bdhw", imag, self.weight_imag)
-            imag_out = torch.einsum("bchw,cdhw->bdhw", real, self.weight_imag) \
-                    + torch.einsum("bchw,cdhw->bdhw", imag, self.weight_real)
+        x = self.norm(x)  # normalize to stabilize
+        x_bottleneck = self.bottleneck(x)
 
-            # Reconstruct full frequency domain with filtered values
-            x_ft = torch.complex(real_out, imag_out)
+        mean = self.layer_mean(x_bottleneck)
+        log_var = self.layer_variance(x_bottleneck) * 4  # Restricts to [-4, 4]
 
-            x = torch.fft.irfft2(x_ft, s=(self.im_x, self.im_y), norm='ortho')
-            x = F.relu(x) 
+        return mean, log_var
 
-            x_flat = self.flatten(x)  # shape: [B, hidden_dim * im_x * im_y]
-            mean = self.layer_mean(x_flat)
-            log_var = self.layer_variance(x_flat)
-
-            return mean, log_var
-    
 class FNO_Decoder(nn.Module):
     def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter_x = 50, freq_filter_y = 26):
         super(FNO_Decoder, self).__init__()
@@ -199,10 +201,6 @@ class FNO_Decoder(nn.Module):
         # Learnable frequency weights (real and imaginary)
         self.weight_real = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
         self.weight_imag = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
-
-        self.weight_real_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
-        self.weight_imag_2 = nn.Parameter(torch.randn(hidden_dim, hidden_dim, freq_filter_x, freq_filter_y))
-
 
         # Down projection: map back to output_dim (e.g., 1 for grayscale image)
         self.output_proj = nn.Conv2d(hidden_dim, output_dim, kernel_size=1)

@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
-#from torchvision.utils import save_image, make_grid
-#from torchvision.datasets import MNIST
+from torchvision.utils import save_image, make_grid
+from torchvision.datasets import MNIST
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     patience_counter = 0    # how many bad epochs in a row
 
     max_beta = 1.0
-    warmup_epochs = 2
+    warmup_epochs = 10
 
     if train_model:
         optimizer = Adam(model.parameters(), lr=lr)
@@ -69,13 +69,20 @@ if __name__ == '__main__':
 
                 x_hat, mean, log_var = model(x)
 
-                beta = min(max_beta, epoch / warmup_epochs)
-                loss = loss_function(x.view(batch_size, x_dim), x_hat.view(batch_size, x_dim), mean, log_var, beta=beta, dice_weight=10.0)
+                print("log_var stats — mean:", log_var.mean().item(),
+                    "min:", log_var.min().item(),
+                    "max:", log_var.max().item())
+                kl = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+                print(f"KL divergence: {kl.item():.2f}")
+
+                beta = max_beta * (epoch / warmup_epochs) if epoch < warmup_epochs else max_beta
+
+                loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var, beta)
 
                 # Eval: Binarized match rate
                 x_hat_bin = (x_hat > 0.5).float()
                 match = x_hat_bin.eq(x).float().mean().item()
-                print(f"Binarized match: {match:.4f}")
+                # print(f"Binarized match: {match:.4f}")
 
                 overall_loss += loss.item()
                 
@@ -89,7 +96,7 @@ if __name__ == '__main__':
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 patience_counter = 0
-                torch.save(model, './checkpoints/best_model_weights.pth')
+                torch.save(model, './checkpoints/best_model.pth')
                 print("✅ New best model saved.")
             else:
                 patience_counter += 1
@@ -100,10 +107,9 @@ if __name__ == '__main__':
                     break
 
         print("Finish!!")
-        torch.save(model, './checkpoints/best_model_full.pth')
     
     else:
-        loaded_model = torch.load('./checkpoints/metalattice_model.pth')
+        loaded_model = torch.load('./checkpoints/best_model.pth')
         loaded_model.eval()
         # loaded_model = Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y).to(device)
         # state_dict = torch.load('./checkpoints/best_model_full.pth')  # this is just weights

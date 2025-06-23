@@ -25,19 +25,8 @@ def load_mat(filename):
             data[k] = v[:]  # Load data into memory
     return data
 
-def loss_function(x, x_hat, mean, log_var, beta=1.0, dice_weight=10.0):
-    # Reconstruction (binary cross-entropy)
-    bce = nn.functional.binary_cross_entropy(x_hat, x, reduction='sum')
-
-    # Dice loss
-    pred = x_hat.view(-1)
-    target = x.view(-1)
-    intersection = (pred * target).sum()
-    dice = 1 - ((2. * intersection + 1.0) / (pred.sum() + target.sum() + 1.0))
-
-    # KL divergence (with safety clamp)
-    log_var = torch.clamp(log_var, min=-10, max=10)
+def loss_function(x, x_hat, mean, log_var, beta = 1.0):
+    recon_loss = nn.functional.binary_cross_entropy(x_hat, x, reduction='sum')
     kld = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-    kld = torch.nan_to_num(kld, nan=0.0, posinf=1e5, neginf=-1e5)
+    return recon_loss + beta * kld
 
-    return bce + beta * kld + dice_weight * dice
