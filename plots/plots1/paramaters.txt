@@ -1,0 +1,5 @@
+Hidden Dim: 16
+Max Beta: 2.0
+Warmup Epochs: 10
+freq_filter_x: 50
+freq_filter_y: 26

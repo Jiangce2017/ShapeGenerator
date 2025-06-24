@@ -4,6 +4,15 @@ import torch.nn as nn
 import numpy as np
 import h5py
 
+def plot_metric(values, title, ylabel, filename):
+        plt.figure()
+        plt.plot(values)
+        plt.title(title)
+        plt.xlabel("Batch")
+        plt.ylabel(ylabel)
+        plt.grid(True)
+        plt.savefig(f"plots/plots4/{filename}.png")
+        plt.close()
 
 def show_image(x):
         fig = plt.figure()

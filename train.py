@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 from models import Model
-from utils import loss_function, load_mat, show_image
+from utils import *
 
 if __name__ == '__main__':
 
@@ -21,7 +21,7 @@ if __name__ == '__main__':
     """
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
-    train_model = True
+    train_model = False
     im_x = 50
     im_y = 50 
     model_type = 'FNO'
@@ -53,7 +53,14 @@ if __name__ == '__main__':
     patience_counter = 0    # how many bad epochs in a row
 
     max_beta = 1.0
-    warmup_epochs = 10
+    warmup_epochs = 5
+
+    kl_values = []
+    recon_values = []
+    loss_values = []
+    logvar_means = []
+    logvar_mins = []
+    logvar_maxs = []
 
     if train_model:
         optimizer = Adam(model.parameters(), lr=lr)
@@ -69,15 +76,25 @@ if __name__ == '__main__':
 
                 x_hat, mean, log_var = model(x)
 
-                print("log_var stats — mean:", log_var.mean().item(),
-                    "min:", log_var.min().item(),
-                    "max:", log_var.max().item())
-                kl = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-                print(f"KL divergence: {kl.item():.2f}")
-
                 beta = max_beta * (epoch / warmup_epochs) if epoch < warmup_epochs else max_beta
 
                 loss = loss_function(x.view(batch_size,x_dim), x_hat.view(batch_size,x_dim), mean, log_var, beta)
+
+                print("log_var stats — mean:", log_var.mean().item(),
+                    "min:", log_var.min().item(),
+                    "max:", log_var.max().item())
+                
+                kl = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
+                recon = nn.functional.binary_cross_entropy(x_hat.view(batch_size, -1), x.view(batch_size, -1), reduction='sum')
+                
+                print(f"KL divergence: {kl.item():.2f}")
+
+                kl_values.append(kl.item())
+                recon_values.append(recon.item())
+                loss_values.append(loss.item())
+                logvar_means.append(log_var.mean().item())
+                logvar_mins.append(log_var.min().item())
+                logvar_maxs.append(log_var.max().item())
 
                 # Eval: Binarized match rate
                 x_hat_bin = (x_hat > 0.5).float()
@@ -109,7 +126,8 @@ if __name__ == '__main__':
         print("Finish!!")
     
     else:
-        loaded_model = torch.load('./checkpoints/best_model.pth')
+        loaded_model = torch.load('./checkpoints/best_model.pth', weights_only=False)
+
         loaded_model.eval()
         # loaded_model = Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y).to(device)
         # state_dict = torch.load('./checkpoints/best_model_full.pth')  # this is just weights
@@ -133,7 +151,11 @@ if __name__ == '__main__':
         
         show_image(generated_images[0].view(im_x,im_y))
 
-
-
+    plot_metric(loss_values, "Total Loss", "Loss", "loss")
+    plot_metric(recon_values, "Reconstruction Loss", "BCE", "recon")
+    plot_metric(kl_values, "KL Divergence", "KL", "kl")
+    plot_metric(logvar_means, "log_var Mean", "log_var mean", "logvar_mean")
+    plot_metric(logvar_mins, "log_var Min", "log_var min", "logvar_min")
+    plot_metric(logvar_maxs, "log_var Max", "log_var max", "logvar_max")
 
 

@@ -128,7 +128,7 @@ class CNN_Decoder(nn.Module):
 
 
 class FNO_Encoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x=32, freq_filter_y=16):
+    def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, freq_filter_x=40, freq_filter_y=20):
         super(FNO_Encoder, self).__init__()
         self.hidden_dim = hidden_dim
         self.im_x = im_x
@@ -185,7 +185,7 @@ class FNO_Encoder(nn.Module):
         return mean, log_var
 
 class FNO_Decoder(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter_x = 32, freq_filter_y = 16):
+    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, freq_filter_x = 40, freq_filter_y = 20):
         super(FNO_Decoder, self).__init__()
         self.latent_dim = latent_dim
         self.hidden_dim = hidden_dim
