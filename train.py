@@ -24,14 +24,14 @@ if __name__ == '__main__':
     train_model = True
     im_x = 50
     im_y = 50 
-    model_type = 'CNN'
+    model_type = 'FL'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
-    batch_size = 32
+    batch_size = 100
     x_dim  = 2500
-    hidden_dim = 32
-    latent_dim = 16
+    hidden_dim = 128
+    latent_dim = 32
     lr = 1e-3
-    epochs = 30
+    epochs = 100
     mnist_transform = transforms.Compose([
             transforms.ToTensor(),
     ])

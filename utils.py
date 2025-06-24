@@ -7,7 +7,8 @@ import h5py
 
 def show_image(x):
         fig = plt.figure()
-        plt.imshow(x.cpu().numpy())
+        cmap = 'Greens'
+        plt.imshow(x.cpu().numpy(),cmap=cmap)
         plt.show()
 
 def loss_function(x, x_hat, mean, log_var):
