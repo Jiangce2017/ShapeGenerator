@@ -14,16 +14,11 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 from models import Model
-from utils import loss_function, load_mat, show_image, CombinedDataset,Logger,train_model, test_model
+from utils import loss_function, load_mat, show_image, CombinedDataset,Logger,plot_ternary
 
 if __name__ == '__main__':
-
-    """
-        A simple implementation of Gaussian MLP Encoder and Decoder
-    """
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
-    #train_model = True
     im_x = 50
     im_y = 50 
     modes1 = 10
@@ -45,10 +40,6 @@ if __name__ == '__main__':
         osp.join(results_dir, model_type+'_train.log'),
         ['ep', 'train_loss','train_rep','train_var','train_mean']
     )
-    test_logger = Logger(
-        osp.join(results_dir, model_type+'_test.log'),
-        ['ep', 'test_loss','test_rep','test_var','test_mean']
-    )
     kwargs = {'num_workers': 1, 'pin_memory': False} 
 
     mat_data = load_mat(dataset_path)
@@ -68,33 +59,41 @@ if __name__ == '__main__':
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
         
-    model = Model(x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y,modes1,modes2).to(device)
+    model_file = osp.join("checkpoints","save_"+model_type+"_model.pth")
+    loaded_model = torch.load(model_file)
+    loaded_model.eval()
+    with torch.no_grad():
+        for batch_idx, (input, output) in enumerate(tqdm(train_loader)):
+
+            input = input.to(device)
+            
+            pred, mean, log_var = loaded_model(input)
+            loss, _, _, _ = loss_function(input.view(-1,x_dim), pred.view(-1,x_dim), mean, log_var,model_type)
+            print("loss: {}".format(loss.item()))
+            break
+    
+    pred = F.sigmoid(pred)
+    show_image(input[0].cpu().detach().numpy().reshape(im_x,im_y))
+    show_image(pred[0].cpu().detach().numpy().reshape(im_x,im_y))
 
 
-    optimizer = Adam(model.parameters(), lr=lr)
-    for epoch in range(epochs):
-        overall_loss, rep_loss, m_loss, v_loss = train_model(train_loader,model,device,optimizer,x_dim,model_type)
-        print("\tEpoch", epoch + 1, "complete!", "\tAverage Train Loss: ", overall_loss)
-        train_logger.log({
-        'ep': epoch,             
-        'train_loss': overall_loss,
-        'train_rep': rep_loss,
-        'train_var': v_loss, 
-        'train_mean': m_loss
-        })
+    latent_vector = mean[[0]]
+
+    real_latent_vector = latent_vector[:,:latent_dim//2,:,:]
+    image_latent_vector = latent_vector[:,latent_dim//2:,:,:]
+    latent_vector = torch.complex(real_latent_vector, image_latent_vector)
+
+    latent_vector = torch.tile(latent_vector,(1,1,10,6))
+    print("latent_vector shape:{}".format(latent_vector.shape))
+    x_hat = loaded_model.Decoder(latent_vector,60,60)
+    show_image(x_hat.cpu().detach().numpy().reshape(60,60))
+    plt.close('all') 
+
+    simplex_points = mean[:3,:]
+    ternary_output_file =  "./results/test_lattices_ternary"
+    plot_ternary(simplex_points,loaded_model,im_x, im_y,latent_dim, ternary_output_file)
+    
 
 
-        if epoch % 10 == 0:
-            torch.save(model, model_file)
-            overall_loss, rep_loss, m_loss, v_loss = test_model(test_loader, model,device,x_dim,model_type)
-            print("\tEpoch", epoch + 1, "complete!", "\tAverage Test Loss: ", overall_loss)
-            test_logger.log({
-            'ep': epoch,             
-            'test_loss': overall_loss,
-            'test_rep': rep_loss,
-            'test_var': v_loss,
-            'test_mean': m_loss
-            })
-        
-    print("Finish!!")
-    torch.save(model, model_file)
+
+

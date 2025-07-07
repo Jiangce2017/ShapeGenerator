@@ -325,7 +325,6 @@ class FreqFNO_Decoder(nn.Module):
         self.LeakyReLU = nn.LeakyReLU(0.2)
         
     def forward(self, x, output_im_x = 50, output_im_y = 50):
-        print("x shape: {}".format(x.shape))
         x = self.complex_activation_function(self.p(x))
 
         x = torch.fft.irfft2(x, s=(output_im_x, output_im_y),dim=(-2,-1))
