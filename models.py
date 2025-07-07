@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from FNO_2d import SpectralConv2d, MLP,LocalMLP,LocalMLP_Complex, MLP_Complex, ComplexReLU,ComplexTanh
 import numpy as np
 
 class Model(nn.Module):
@@ -357,88 +356,123 @@ class FreqFNO_Decoder(nn.Module):
         x = F.sigmoid(x)
         x = x.permute(0, 2, 3, 1)
         return x
+
+################################################################
+# fourier layer
+################################################################
+class SpectralConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(SpectralConv2d, self).__init__()
+
+        """
+        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        """
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1 #Number of Fourier modes to multiply, at most floor(N/2) + 1
+        self.modes2 = modes2
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+    def forward(self, x):
+        batchsize = x.shape[0]
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft2(x)
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+        out_ft[:, :, :self.modes1, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ft[:, :, -self.modes1:, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+
+        #Return to physical space
+        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+        return x
+
+class MLP(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channels):
+        super(MLP, self).__init__()
+        self.mlp1 = nn.Conv2d(in_channels, mid_channels, 1)
+        self.mlp2 = nn.Conv2d(mid_channels, out_channels, 1)
+
+    def forward(self, x):
+        x = self.mlp1(x)
+        x = F.gelu(x)
+        x = self.mlp2(x)
+        return x
+
+class LocalMLP(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(LocalMLP, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1 
+        self.modes2 = modes2
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.float32))
     
-# class FreqFNO_Encoder(nn.Module):
-#     def __init__(self, input_dim, hidden_dim, latent_dim,im_x,im_y,modes1, modes2):
-#         super(FreqFNO_Encoder, self).__init__()
-#         self.modes1 = modes1
-#         self.modes2 = modes2
-#         self.im_x = im_x
-#         self.im_y = im_y
-#         self.hidden_dim = hidden_dim
-#         self.latent_dim = latent_dim
-#         self.LeakyReLU = ComplexReLU(0.2)
-#         self.p = LocalMLP_Complex(1, self.hidden_dim, self.modes1, self.modes2) # input channel is 3: (a(x, y), x, y)
-#         self.conv0 = LocalMLP_Complex(self.hidden_dim, self.hidden_dim, self.modes1, self.modes2)
-#         self.conv1 = LocalMLP_Complex(self.hidden_dim, self.hidden_dim, self.modes1, self.modes2)
-#         self.conv2 = LocalMLP_Complex(self.hidden_dim, self.latent_dim, self.modes1, self.modes2)
-#         self.conv3 = LocalMLP_Complex(self.latent_dim, self.latent_dim, self.modes1, self.modes2)
-#         self.conv4 = LocalMLP_Complex(self.latent_dim, self.latent_dim, self.modes1, self.modes2)
-#         self.conv5 = LocalMLP_Complex(self.latent_dim, self.latent_dim, self.modes1, self.modes2)
-#         self.mlp0 = MLP_Complex(self.hidden_dim, self.hidden_dim, self.hidden_dim)
-#         self.mlp1 = MLP_Complex(self.hidden_dim, self.hidden_dim, self.hidden_dim)
-#         self.mlp2 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
-#         self.mlp3 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
-#         self.mlp4 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
-#         self.mlp5 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
 
-#         self.w0 = MLP_Complex(self.hidden_dim, self.hidden_dim, self.hidden_dim)
-#         self.w1 = MLP_Complex(self.hidden_dim, self.hidden_dim, self.hidden_dim)
-#         self.w2 = MLP_Complex(self.hidden_dim, self.latent_dim, self.hidden_dim)
-#         self.w3 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
-#         self.w4 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
-#         self.w5 = MLP_Complex(self.latent_dim, self.latent_dim, self.latent_dim)
-
-#     def forward(self, x):
-#         x = x.view(-1,1,self.im_x,self.im_y)
-#         x = torch.fft.rfft2(x)
-#         x = x[:,:,:self.modes1, :self.modes2]
-#         x = self.LeakyReLU(self.p(x))
-        
-
-#         x1 = self.conv0(x)
-#         x1 = self.mlp0(x1)
-#         x2 = self.w0(x)
-#         x = x1 + x2
-#         x = self.LeakyReLU(x)
-
-#         x1 = self.conv1(x)
-#         x1 = self.mlp1(x1)
-#         x2 = self.w1(x)
-#         x = x1 + x2
-#         x = self.LeakyReLU(x)
-
-#         x1 = self.conv2(x)
-#         x1 = self.mlp2(x1)
-#         x2 = self.w2(x)
-#         x = x1 + x2
-#         x = self.LeakyReLU(x)
-
-#         x1 = self.conv3(x)
-#         x1 = self.mlp3(x1)
-#         x2 = self.w3(x)
-#         x = x1 + x2
-#         x = self.LeakyReLU(x)
-
-#         x1 = self.conv4(x)
-#         x1 = self.mlp4(x1)
-#         x2 = self.w4(x)
-#         x = x1 + x2
-#         x = self.LeakyReLU(x)
-
-#         x1 = self.conv5(x)
-#         x1 = self.mlp5(x1)
-#         x2 = self.w5(x)
-#         x = x1 + x2
-
-#         mean = torch.mean(x,dim=(2,3),keepdim=True)
-#         var = torch.var(x,dim=(2,3),keepdim=True)
-#         return mean, var
+    def forward(self, x):
+        out = self.compl_mul2d(x, self.weights1)
+        return out
     
-#     def get_grid(self, shape, device):
-        # batchsize, size_x, size_y = shape[0], shape[1], shape[2]
-        # gridx = torch.tensor(np.linspace(0, 1, size_x), dtype=torch.float)
-        # gridx = gridx.reshape(1, size_x, 1, 1).repeat([batchsize, 1, size_y, 1])
-        # gridy = torch.tensor(np.linspace(0, 1, size_y), dtype=torch.float)
-        # gridy = gridy.reshape(1, 1, size_y, 1).repeat([batchsize, size_x, 1, 1])
-        # return torch.cat((gridx, gridy), dim=-1).to(device)
+class LocalMLP_Complex(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(LocalMLP_Complex, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1 
+        self.modes2 = modes2
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.complex64))
+    
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+    def forward(self, x):
+        out = self.compl_mul2d(x, self.weights1)
+        return out
+    
+class MLP_Complex(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channels):
+        super(MLP_Complex, self).__init__()
+        self.mlp1 = nn.Conv2d(in_channels, mid_channels, 1, dtype=torch.complex64)
+        self.mlp2 = nn.Conv2d(mid_channels, out_channels, 1, dtype=torch.complex64)
+        self.LeakyReLU = ComplexReLU(0.2)
+
+    def forward(self, x):
+        x = self.mlp1(x)
+        x = self.LeakyReLU(x)
+        x = self.mlp2(x)
+        return x
+    
+class ComplexReLU(nn.Module):
+    def __init__(self, negative_slope):
+        super(ComplexReLU, self).__init__()
+        self.negative_slope = negative_slope
+    def forward(self, x):
+        LeakyReLU = nn.LeakyReLU(self.negative_slope)
+        return torch.complex(LeakyReLU(x.real), LeakyReLU(x.imag))
+    
+class ComplexTanh(nn.Module):
+    def __init__(self):
+        super(ComplexTanh, self).__init__()
+    def forward(self, x):
+        return torch.complex(F.tanh(x.real), F.tanh(x.imag))
+    

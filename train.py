@@ -77,9 +77,6 @@ if __name__ == '__main__':
             v_loss = 0
             for batch_idx, (input, output) in enumerate(train_loader):
                 #x = x.view(batch_size, x_dim)
-
-
-
                 input = input.to(device)
                 output = output.float()
                 output = output.to(device)
