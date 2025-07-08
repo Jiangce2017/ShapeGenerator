@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 
 from models import Model
 from utils import loss_function, load_mat, show_image, CombinedDataset,Logger,train_model, test_model
+from dataset import ABCDataset
 
 if __name__ == '__main__':
 
@@ -26,10 +27,12 @@ if __name__ == '__main__':
     #train_model = True
     im_x = 50
     im_y = 50 
+    im_z = 50
     modes1 = 10
     modes2 = 6
     model_type = 'Freq_FNO'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
+    datasetSize = 512
     results_dir = './results'
     model_file = osp.join("checkpoints",model_type+"_model.pth")
     batch_size = 64
@@ -51,19 +54,20 @@ if __name__ == '__main__':
     )
     kwargs = {'num_workers': 1, 'pin_memory': False} 
 
-    mat_data = load_mat(dataset_path)
-    dataset = mat_data['ShapeSpace']
-    dataset = dataset.astype(np.float32)
+    # mat_data = load_mat(dataset_path)
+    # dataset = mat_data['ShapeSpace']
+    # dataset = dataset.astype(np.float32)
+    dataset = ABCDataset("./datasets/abc_0000_stl2_v00", datasetSize)
     input_dataset = dataset[:512]
 
 
-    output_dataset_path = './datasets/Wang/Physics.npy'
-    with open(output_dataset_path, 'rb') as f:
-        output_dataset = np.load(f)
-        output_dataset = torch.from_numpy(output_dataset)
-    combined_dataset = CombinedDataset(input_dataset, output_dataset)
+    # output_dataset_path = './datasets/Wang/Physics.npy'
+    # with open(output_dataset_path, 'rb') as f:
+    #     output_dataset = np.load(f)
+    #     output_dataset = torch.from_numpy(output_dataset)
+    # combined_dataset = CombinedDataset(input_dataset, output_dataset)
 
-    train_dataset, test_dataset = train_test_split(combined_dataset, test_size=0.1, random_state=42)
+    train_dataset, test_dataset = train_test_split(dataset, test_size=0.1, random_state=42)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)

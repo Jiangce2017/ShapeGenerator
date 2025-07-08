@@ -6,32 +6,46 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import h5py
 import csv
+from joblib import Parallel, delayed
+import trimesh
 
-def train_model(data_loader, model,device,optimizer,x_dim,model_type):
+def train_model(data_loader, model, device, optimizer, x_dim, model_type):
     model.train()
     overall_loss = 0
     rep_loss = 0
     m_loss = 0
     v_loss = 0
-    for batch_idx, (input, output) in enumerate(data_loader):
-        #x = x.view(batch_size, x_dim)
-        input = input.to(device)
-        output = output.float()
-        output = output.to(device)
+
+    for batch_idx, batch in enumerate(data_loader):
+        stl_paths = batch['stl_path']
+        output = batch['output'].float().to(device)
+
+        input_voxels = voxelize_batch(stl_paths, grid_size=x_dim, num_jobs=4)
+        input_voxels = input_voxels.to(device)
 
         optimizer.zero_grad()
 
-        pred, mean, log_var = model(input)
+        pred, mean, log_var = model(input_voxels)
 
-        loss,reproduction_loss, var_loss, mean_loss = loss_function(input.view(-1,x_dim), pred.view(-1,x_dim), mean, log_var,model_type)
-        
+        loss, reproduction_loss, var_loss, mean_loss = loss_function(
+            input_voxels.view(-1, x_dim**3),
+            pred.view(-1, x_dim**3),
+            mean,
+            log_var,
+            model_type
+        )
+
+        loss.backward()
+        optimizer.step()
+
         overall_loss += loss.item()
         rep_loss += reproduction_loss.item()
         m_loss += mean_loss.item()
         v_loss += var_loss.item()
-        loss.backward()
-        optimizer.step()
-    return overall_loss / (batch_idx+1), rep_loss/(batch_idx+1), v_loss/(batch_idx+1), m_loss/(batch_idx+1)
+
+    num_batches = batch_idx + 1
+    return overall_loss / num_batches, rep_loss / num_batches, v_loss / num_batches, m_loss / num_batches
+
             
 def test_model(data_loader, model,device,x_dim,model_type):
     model.eval()  
@@ -39,10 +53,13 @@ def test_model(data_loader, model,device,x_dim,model_type):
     rep_loss = 0
     m_loss = 0
     v_loss = 0
-    for batch_idx, (input, output) in enumerate(data_loader):
-        input = input.to(device)
-        output = output.float()
-        output = output.to(device)
+
+    for batch_idx, batch in enumerate(data_loader):
+        stl_paths = batch['stl_path']
+        output = batch['output'].float().to(device)
+
+        input_voxels = voxelize_batch(stl_paths, grid_size=x_dim, num_jobs=4)
+        input_voxels = input_voxels.to(device)
         pred, mean, log_var = model(input)
         loss,reproduction_loss, var_loss, mean_loss = loss_function(input.view(-1,x_dim), pred.view(-1,x_dim), mean, log_var,model_type)
         overall_loss += loss.item()
@@ -162,3 +179,19 @@ def plot_ternary(simplex_points,loaded_model,im_x, im_y,latent_dim, output_file)
         ax.imshow(interpolate_list[idx].view(im_x, im_y).cpu().detach().numpy(),cmap=cmap, vmin=0, vmax=1.0,extent=(tx, tx + 28, ty, ty + 28))
     ax.axis("off")   
     fig.savefig(output_file,dpi = 450)
+
+def voxelize_stl(path, grid_size=32):
+    mesh = trimesh.load(path, force='mesh')
+    vox = mesh.voxelized(pitch=1.0 / grid_size).matrix.astype(np.float32)
+    # Pad or crop to grid_size³
+    vox = np.pad(vox, ((0, max(0, grid_size - vox.shape[0])),
+                       (0, max(0, grid_size - vox.shape[1])),
+                       (0, max(0, grid_size - vox.shape[2]))),
+                 mode='constant', constant_values=0)
+    return vox[:grid_size, :grid_size, :grid_size]
+
+def voxelize_batch(stl_paths, grid_size=32, num_jobs=4):
+    voxels = Parallel(n_jobs=num_jobs)(
+        delayed(voxelize_stl)(path, grid_size) for path in stl_paths
+    )
+    return torch.tensor(voxels).unsqueeze(1)  # (B, 1, D, H, W)
