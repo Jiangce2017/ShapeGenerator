@@ -17,34 +17,66 @@ def train_model(data_loader, model, device, optimizer, x_dim, model_type):
     v_loss = 0
 
     for batch_idx, batch in enumerate(data_loader):
-        stl_paths = batch['stl_path']
-        output = batch['output'].float().to(device)
+        stl_paths = batch['stl_path']  # list of STL file paths
+        ids = batch['id']              # list of shape IDs (strings)
 
-        input_voxels = voxelize_batch(stl_paths, grid_size=x_dim, num_jobs=4)
+        print("STL Paths:", stl_paths)
+        print("IDs:", ids)
+
+        if len(stl_paths) == 0:
+            raise RuntimeError("No STL paths found in the current batch.")
+
+        input_voxels = []
+        for path in stl_paths:
+            try:
+                vox = voxelize_stl(path)
+                input_voxels.append(vox)
+            except Exception as e:
+                print(f"Failed to voxelize {path}: {e}")
+                continue
+
+        if len(input_voxels) == 0:
+            raise RuntimeError("All voxelization failed. Check your STL files or paths.")
+
+        input_voxels = torch.from_numpy(np.stack(input_voxels)).unsqueeze(1).to(device)
+
         input_voxels = input_voxels.to(device)
+
+        # Add dummy channels to get 10 input features per voxel
+        B, C, D, H, W = input_voxels.shape
+        if C < 10:
+            dummy = torch.zeros(B, 10 - C, D, H, W, device=device)
+            input_voxels = torch.cat([input_voxels, dummy], dim=1)  # (B, 10, D, H, W)
+
+        # Permute to match FNO format: (B, D, H, W, C)
+        input_for_fno = input_voxels.permute(0, 2, 3, 4, 1)  # (B, 64, 64, 64, 10)
 
         optimizer.zero_grad()
 
-        pred, mean, log_var = model(input_voxels)
+        pred, mean, log_var = model(input_for_fno)
 
         loss, reproduction_loss, var_loss, mean_loss = loss_function(
-            input_voxels.view(-1, x_dim**3),
-            pred.view(-1, x_dim**3),
+            input_voxels.view(input_voxels.size(0), -1),  # (B, x_dim^3)
+            pred.reshape(pred.size(0), -1),
             mean,
             log_var,
             model_type
         )
 
+        # Backprop and optimize
         loss.backward()
         optimizer.step()
 
+        # Accumulate losses
         overall_loss += loss.item()
         rep_loss += reproduction_loss.item()
         m_loss += mean_loss.item()
         v_loss += var_loss.item()
 
+    # Normalize by number of batches
     num_batches = batch_idx + 1
     return overall_loss / num_batches, rep_loss / num_batches, v_loss / num_batches, m_loss / num_batches
+
 
             
 def test_model(data_loader, model,device,x_dim,model_type):
@@ -60,6 +92,7 @@ def test_model(data_loader, model,device,x_dim,model_type):
 
         input_voxels = voxelize_batch(stl_paths, grid_size=x_dim, num_jobs=4)
         input_voxels = input_voxels.to(device)
+
         pred, mean, log_var = model(input)
         loss,reproduction_loss, var_loss, mean_loss = loss_function(input.view(-1,x_dim), pred.view(-1,x_dim), mean, log_var,model_type)
         overall_loss += loss.item()
@@ -67,7 +100,6 @@ def test_model(data_loader, model,device,x_dim,model_type):
         m_loss += mean_loss.item()
         v_loss += var_loss.item()
     return overall_loss / (batch_idx+1), rep_loss/(batch_idx+1), v_loss/(batch_idx+1), m_loss/(batch_idx+1)
-            
 
 
 class Logger(object):
@@ -128,7 +160,7 @@ def loss_function(x, x_hat, mean, log_var,model_type):
     # print("x_hat max: {}, x_hat min: {}".format(torch.max(x_hat), torch.min(x_hat) ))
     # print("mean max: {}, mean min: {}".format(torch.max(mean), torch.min(mean) ))
     # print("mean_loss: {}, var_loss: {}".format(mean_loss,var_loss))
-    if model_type == 'FNO' or model_type == 'Freq_FNO':
+    if model_type == 'FNO' or model_type == 'Freq_FNO' or model_type == 'FNO3D':
         total_loss = reproduction_loss + var_loss + mean_loss
     else:
         total_loss = reproduction_loss + KLD
@@ -180,7 +212,7 @@ def plot_ternary(simplex_points,loaded_model,im_x, im_y,latent_dim, output_file)
     ax.axis("off")   
     fig.savefig(output_file,dpi = 450)
 
-def voxelize_stl(path, grid_size=32):
+def voxelize_stl(path, grid_size=64):
     mesh = trimesh.load(path, force='mesh')
     vox = mesh.voxelized(pitch=1.0 / grid_size).matrix.astype(np.float32)
     # Pad or crop to grid_size³
@@ -190,8 +222,11 @@ def voxelize_stl(path, grid_size=32):
                  mode='constant', constant_values=0)
     return vox[:grid_size, :grid_size, :grid_size]
 
+
 def voxelize_batch(stl_paths, grid_size=32, num_jobs=4):
-    voxels = Parallel(n_jobs=num_jobs)(
-        delayed(voxelize_stl)(path, grid_size) for path in stl_paths
-    )
-    return torch.tensor(voxels).unsqueeze(1)  # (B, 1, D, H, W)
+    # voxels = Parallel(n_jobs=num_jobs)(
+    #     delayed(voxelize_stl)(path, grid_size) for path in stl_paths
+    # )
+    # return torch.tensor(voxels).unsqueeze(1)  # (B, 1, D, H, W)
+    voxels = [voxelize_stl(path, grid_size) for path in stl_paths]
+    return torch.tensor(voxels).unsqueeze(1)

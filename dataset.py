@@ -10,11 +10,11 @@ class ABCDataset(Dataset):
         self.root_dir = root_dir
         self.stl_paths = []
         self.ids = []
-        count = 0
 
         # Traverse each subfolder
         for folder in os.listdir(root_dir):
-            if (count >= size): break
+            if len(self.stl_paths) >= size:
+                break
             folder_path = os.path.join(root_dir, folder)
             if os.path.isdir(folder_path):
                 stl_files = [f for f in os.listdir(folder_path) if f.endswith('.stl')]
@@ -25,7 +25,7 @@ class ABCDataset(Dataset):
                 elif len(stl_files) > 1:
                     raise ValueError(f"Multiple STL files in {folder_path}")
                 # else: silently skip folders without .stl
-            count += 1
+
 
     def __len__(self):
         return len(self.stl_paths)

@@ -134,7 +134,6 @@ class FNO3d(nn.Module):
         gridz = gridz.reshape(1, 1, 1, size_z, 1).repeat([batchsize, size_x, size_y, 1, 1])
         return torch.cat((gridx, gridy, gridz), dim=-1).to(device)
     
-
 class CNN3d(nn.Module):
     def __init__(self, modes1, modes2, modes3, width):
         super(CNN3d, self).__init__()

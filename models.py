@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from models_3d import *
 
 class Model(nn.Module):
-    def __init__(self,x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y,modes1, modes2):
+    def __init__(self,x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y,modes1, modes2, im_z=None, modes3=None):
         super(Model, self).__init__()
         self.device = device
         self.im_x = im_x
@@ -26,6 +27,10 @@ class Model(nn.Module):
         elif model_type == 'Freq_FNO':
             self.Encoder = FNO_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y,modes1=modes1,modes2=modes2)
             self.Decoder = FreqFNO_Decoder(latent_dim=latent_dim//2, hidden_dim = hidden_dim, output_dim = x_dim,im_x=im_x, im_y=im_y,modes1=10,modes2=6)
+        elif model_type == 'FNO3D':
+            self.Encoder = FNO3D_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
+            self.Decoder = FNO3D_Decoder(latent_dim=latent_dim, hidden_dim=hidden_dim, output_dim=x_dim, im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
+
     def reparameterization(self, mean, var):
         epsilon = torch.randn_like(var).to(self.device)
         z = mean + var*epsilon                    
@@ -59,6 +64,11 @@ class Model(nn.Module):
         elif self.model_type == 'Freq_FNO':
             mean, var= self.Encoder(x)
             z = self.reparameterization_FreqNO(mean, var)
+            x_hat = self.Decoder(z)
+            return x_hat, mean, var
+        elif self.model_type == 'FNO3D':
+            mean, var = self.Encoder(x)
+            z = self.reparameterization(mean, torch.sqrt(var))
             x_hat = self.Decoder(z)
             return x_hat, mean, var
         else:
@@ -156,6 +166,121 @@ class CNN_Decoder(nn.Module):
         h = self.LeakyReLU(self.conv1(h))
         x_hat = self.sigmoid(self.conv2(h))
         return x_hat    
+
+class FNO3D_Encoder(nn.Module):
+    def __init__(self, input_dim, hidden_dim, latent_dim, im_x, im_y, im_z, modes1, modes2, modes3):
+        super(FNO3D_Encoder, self).__init__()
+        self.im_x = im_x
+        self.im_y = im_y
+        self.im_z = im_z
+        self.hidden_dim = hidden_dim
+        self.latent_dim = latent_dim
+
+        self.p = nn.Linear(input_dim + 3, hidden_dim)  # +3 for (x, y, z)
+
+        self.conv0 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
+        self.conv1 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
+        self.conv2 = SpectralConv3d(hidden_dim, latent_dim, modes1, modes2, modes3)
+
+        self.mlp0 = MLP3D(hidden_dim, hidden_dim, hidden_dim)
+        self.mlp1 = MLP3D(hidden_dim, hidden_dim, hidden_dim)
+        self.mlp2 = MLP3D(latent_dim, latent_dim, latent_dim)
+
+        self.w0 = nn.Conv3d(hidden_dim, hidden_dim, 1)
+        self.w1 = nn.Conv3d(hidden_dim, hidden_dim, 1)
+        self.w2 = nn.Conv3d(hidden_dim, latent_dim, 1)
+
+        self.activation = nn.LeakyReLU(0.2)
+
+    def forward(self, x):  # x: (B, D, H, W, C)
+        grid = self.get_grid(x.shape, x.device)
+        x = torch.cat((x, grid), dim=-1)  # (B, D, H, W, C+3)
+        x = self.p(x)  # (B, D, H, W, hidden_dim)
+        x = x.permute(0, 4, 1, 2, 3)  # (B, hidden_dim, D, H, W)
+
+        x1 = self.conv0(x)
+        x1 = self.mlp0(x1)
+        x2 = self.w0(x)
+        x = self.activation(x1 + x2)
+
+        x1 = self.conv1(x)
+        x1 = self.mlp1(x1)
+        x2 = self.w1(x)
+        x = self.activation(x1 + x2)
+
+        x1 = self.conv2(x)
+        x1 = self.mlp2(x1)
+        x2 = self.w2(x)
+        x = x1 + x2
+
+        mean = torch.mean(x, dim=(2, 3, 4), keepdim=True)
+        var = torch.var(x, dim=(2, 3, 4), keepdim=True)
+        return mean, var
+
+    def get_grid(self, shape, device):
+        B, D, H, W, _ = shape
+        gridx = torch.linspace(0, 1, self.im_x, dtype=torch.float32, device=device).view(1, self.im_x, 1, 1, 1).repeat(B, 1, self.im_y, self.im_z, 1)
+        gridy = torch.linspace(0, 1, self.im_y, dtype=torch.float32, device=device).view(1, 1, self.im_y, 1, 1).repeat(B, self.im_x, 1, self.im_z, 1)
+        gridz = torch.linspace(0, 1, self.im_z, dtype=torch.float32, device=device).view(1, 1, 1, self.im_z, 1).repeat(B, self.im_x, self.im_y, 1, 1)
+        return torch.cat((gridx, gridy, gridz), dim=-1)
+
+
+class FNO3D_Decoder(nn.Module):
+    def __init__(self, latent_dim, hidden_dim, output_dim, im_x, im_y, im_z, modes1, modes2, modes3):
+        super(FNO3D_Decoder, self).__init__()
+        self.im_x = im_x
+        self.im_y = im_y
+        self.im_z = im_z
+        self.latent_dim = latent_dim
+        self.hidden_dim = hidden_dim
+
+        self.p = LocalMLP3D(latent_dim, hidden_dim, im_x, im_y, im_z)
+
+        self.conv0 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
+        self.conv1 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
+        self.conv2 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
+        self.conv3 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
+
+        self.mlp0 = MLP3D(hidden_dim, hidden_dim, hidden_dim * 2)
+        self.mlp1 = MLP3D(hidden_dim, hidden_dim, hidden_dim * 2)
+        self.mlp2 = MLP3D(hidden_dim, hidden_dim, hidden_dim * 2)
+        self.mlp3 = MLP3D(hidden_dim, hidden_dim, hidden_dim * 2)
+
+        self.w0 = nn.Conv3d(hidden_dim, hidden_dim, 1)
+        self.w1 = nn.Conv3d(hidden_dim, hidden_dim, 1)
+        self.w2 = nn.Conv3d(hidden_dim, hidden_dim, 1)
+        self.w3 = nn.Conv3d(hidden_dim, hidden_dim, 1)
+
+        self.q = MLP3D(hidden_dim, output_dim, latent_dim)
+        self.activation = nn.LeakyReLU(0.2)
+
+    def forward(self, x):
+        x = self.activation(self.p(x))  # (B, hidden_dim, D, H, W)
+
+        x1 = self.conv0(x)
+        x1 = self.mlp0(x1)
+        x2 = self.w0(x)
+        x = self.activation(x1 + x2)
+
+        x1 = self.conv1(x)
+        x1 = self.mlp1(x1)
+        x2 = self.w1(x)
+        x = self.activation(x1 + x2)
+
+        x1 = self.conv2(x)
+        x1 = self.mlp2(x1)
+        x2 = self.w2(x)
+        x = self.activation(x1 + x2)
+
+        x1 = self.conv3(x)
+        x1 = self.mlp3(x1)
+        x2 = self.w3(x)
+        x = x1 + x2
+
+        x = self.q(x)
+        x = torch.sigmoid(x)
+        x = x.permute(0, 2, 3, 4, 1)  # (B, D, H, W, output_channels)
+        return x
 
 class FNO_Encoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim,im_x,im_y,modes1, modes2):
@@ -408,6 +533,18 @@ class MLP(nn.Module):
         x = self.mlp2(x)
         return x
 
+class MLP3D(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channels):
+        super(MLP3D, self).__init__()
+        self.mlp1 = nn.Conv3d(in_channels, mid_channels, 1)
+        self.mlp2 = nn.Conv3d(mid_channels, out_channels, 1)
+
+    def forward(self, x):
+        x = self.mlp1(x)
+        x = F.gelu(x)
+        x = self.mlp2(x)
+        return x
+
 class LocalMLP(nn.Module):
     def __init__(self, in_channels, out_channels, modes1, modes2):
         super(LocalMLP, self).__init__()
@@ -427,6 +564,30 @@ class LocalMLP(nn.Module):
     def forward(self, x):
         out = self.compl_mul2d(x, self.weights1)
         return out
+
+class LocalMLP3D(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2, modes3):
+        super(LocalMLP3D, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1
+        self.modes2 = modes2
+        self.modes3 = modes3
+
+        self.scale = 1 / (in_channels * out_channels)
+        self.weights = nn.Parameter(
+            self.scale * torch.rand(in_channels, out_channels, modes1, modes2, modes3, dtype=torch.float32)
+        )
+
+    def compl_mul3d(self, input, weights):
+        # input: (B, in_channels, D, H, W)
+        # weights: (in_channels, out_channels, D, H, W)
+        # output: (B, out_channels, D, H, W)
+        return torch.einsum("bixyz,ioxyz->boxyz", input, weights)
+
+    def forward(self, x):
+        return self.compl_mul3d(x, self.weights)
+
     
 class LocalMLP_Complex(nn.Module):
     def __init__(self, in_channels, out_channels, modes1, modes2):
