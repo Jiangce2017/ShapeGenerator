@@ -8,6 +8,7 @@ import h5py
 import csv
 from joblib import Parallel, delayed
 import trimesh
+import os
 
 def train_model(data_loader, model, device, optimizer, x_dim, model_type):
     model.train()
@@ -15,6 +16,7 @@ def train_model(data_loader, model, device, optimizer, x_dim, model_type):
     rep_loss = 0
     m_loss = 0
     v_loss = 0
+    totalBatches = len(data_loader)
 
     for batch_idx, batch in enumerate(data_loader):
         stl_paths = batch['stl_path']  # list of STL file paths
@@ -26,17 +28,12 @@ def train_model(data_loader, model, device, optimizer, x_dim, model_type):
         if len(stl_paths) == 0:
             raise RuntimeError("No STL paths found in the current batch.")
 
-        input_voxels = []
-        for path in stl_paths:
-            try:
-                vox = voxelize_stl(path)
-                input_voxels.append(vox)
-            except Exception as e:
-                print(f"Failed to voxelize {path}: {e}")
-                continue
+        input_voxels = voxelize_batch(stl_paths)
 
         if len(input_voxels) == 0:
             raise RuntimeError("All voxelization failed. Check your STL files or paths.")
+        else :
+            print("batch voxelized")
 
         input_voxels = torch.from_numpy(np.stack(input_voxels)).unsqueeze(1).to(device)
 
@@ -72,6 +69,8 @@ def train_model(data_loader, model, device, optimizer, x_dim, model_type):
         rep_loss += reproduction_loss.item()
         m_loss += mean_loss.item()
         v_loss += var_loss.item()
+
+        print(f"Finished batch {batch_idx + 1} / {totalBatches}")
 
     # Normalize by number of batches
     num_batches = batch_idx + 1
@@ -223,10 +222,11 @@ def voxelize_stl(path, grid_size=64):
     return vox[:grid_size, :grid_size, :grid_size]
 
 
-def voxelize_batch(stl_paths, grid_size=32, num_jobs=4):
-    # voxels = Parallel(n_jobs=num_jobs)(
-    #     delayed(voxelize_stl)(path, grid_size) for path in stl_paths
-    # )
-    # return torch.tensor(voxels).unsqueeze(1)  # (B, 1, D, H, W)
-    voxels = [voxelize_stl(path, grid_size) for path in stl_paths]
-    return torch.tensor(voxels).unsqueeze(1)
+def voxelize_batch(stl_paths, grid_size=64):
+   return [voxelize_stl(path, grid_size) for path in stl_paths]
+
+def voxelize_batch_parrallel(stl_paths, grid_size=64, num_jobs = os.cpu_count() // 2):
+    voxels = Parallel(n_jobs=num_jobs)(
+        delayed(voxelize_stl)(path, grid_size) for path in stl_paths
+    )
+    return voxels
