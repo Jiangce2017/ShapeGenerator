@@ -31,7 +31,7 @@ if __name__ == '__main__':
     modes1 = 10
     modes2 = 6
     modes3 = 6
-    model_type = 'FNO3D'
+    model_type = 'Freq_FNO3D'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
     datasetSize = 512
     results_dir = './results'
