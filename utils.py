@@ -75,9 +75,7 @@ def train_model(data_loader, model, device, optimizer, x_dim, model_type):
     # Normalize by number of batches
     num_batches = batch_idx + 1
     return overall_loss / num_batches, rep_loss / num_batches, v_loss / num_batches, m_loss / num_batches
-
-
-            
+ 
 def test_model(data_loader, model,device,x_dim,model_type):
     model.eval()  
     overall_loss = 0
