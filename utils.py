@@ -209,15 +209,28 @@ def plot_ternary(simplex_points,loaded_model,im_x, im_y,latent_dim, output_file)
     ax.axis("off")   
     fig.savefig(output_file,dpi = 450)
 
+def normalized_mesh_size(verts):
+    v_min = np.min(verts,axis=0,keepdims=True)
+    v_max = np.max(verts,axis=0,keepdims=True)
+    v_mean = np.mean(verts,axis=0,keepdims=True)
+    scale = 1/(v_max-v_min)
+    verts = (verts - v_mean)*scale
+    return verts
+
 def voxelize_stl(path, grid_size=64):
     mesh = trimesh.load(path, force='mesh')
+    ## normalize mesh
+    verts = normalized_mesh_size(mesh.vertices)
+    mesh.vertices = verts
+
     vox = mesh.voxelized(pitch=1.0 / grid_size).matrix.astype(np.float32)
     # Pad or crop to grid_size³
-    vox = np.pad(vox, ((0, max(0, grid_size - vox.shape[0])),
-                       (0, max(0, grid_size - vox.shape[1])),
-                       (0, max(0, grid_size - vox.shape[2]))),
-                 mode='constant', constant_values=0)
-    return vox[:grid_size, :grid_size, :grid_size]
+    # vox = np.pad(vox, ((0, max(0, grid_size - vox.shape[0])),
+    #                    (0, max(0, grid_size - vox.shape[1])),
+    #                    (0, max(0, grid_size - vox.shape[2]))),
+    #              mode='constant', constant_values=0)
+    # return vox[:grid_size, :grid_size, :grid_size]
+    return vox
 
 
 def voxelize_batch(stl_paths, grid_size=64):
