@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 from models import Model
-from utils import loss_function, load_mat, show_image, CombinedDataset,Logger,train_model, test_model
+from utils import loss_function, load_mat, show_image, CombinedDataset,Logger,train_3D_model, test_3D_model
 from dataset import ABCDataset
 
 if __name__ == '__main__':
@@ -25,9 +25,10 @@ if __name__ == '__main__':
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
     #train_model = True
-    im_x = 64
-    im_y = 64
-    im_z = 64
+    im_x = 10
+    im_y = 10
+    im_z = 10
+    x_dim = 2500
     modes1 = 10
     modes2 = 6
     modes3 = 6
@@ -36,10 +37,10 @@ if __name__ == '__main__':
     datasetSize = 512
     results_dir = './results'
     model_file = osp.join("checkpoints",model_type+"_model.pth")
-    batch_size = 8
-    x_dim  = 10
-    hidden_dim = 64
-    latent_dim = 64
+    batch_size = 16
+    train_resolution  = 10
+    hidden_dim = 32
+    latent_dim = 32
     lr = 1e-3
     epochs = 1000
 
@@ -77,7 +78,7 @@ if __name__ == '__main__':
 
     optimizer = Adam(model.parameters(), lr=lr)
     for epoch in range(epochs):
-        overall_loss, rep_loss, m_loss, v_loss = train_model(train_loader,model,device,optimizer,x_dim,model_type)
+        overall_loss, rep_loss, m_loss, v_loss = train_3D_model(train_loader,model,device,optimizer,train_resolution,model_type)
         print("\tEpoch", epoch + 1, "complete!", "\tAverage Train Loss: ", overall_loss)
         # train_logger.log({
         # 'ep': epoch,             
@@ -90,7 +91,7 @@ if __name__ == '__main__':
 
         if epoch % 10 == 0:
             torch.save(model, model_file)
-            # overall_loss, rep_loss, m_loss, v_loss = test_model(test_loader, model,device,x_dim,model_type)
+            # overall_loss, rep_loss, m_loss, v_loss = test_3D_model(test_loader, model,device,x_dim,model_type)
             # print("\tEpoch", epoch + 1, "complete!", "\tAverage Test Loss: ", overall_loss)
             # test_logger.log({
             # 'ep': epoch,             

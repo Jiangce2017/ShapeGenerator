@@ -24,16 +24,16 @@ class Model(nn.Module):
             self.Encoder = FL_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
             self.Decoder = FL_Decoder(latent_dim=latent_dim, hidden_dim = hidden_dim, output_dim = x_dim)
         elif model_type == 'FNO':
-            self.Encoder = FNO_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y,modes1=modes1,modes2=modes2)
+            self.Encoder = FNO_Encoder(input_dim=3, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y,modes1=modes1,modes2=modes2)
             self.Decoder = FNO_Decoder(latent_dim=latent_dim, hidden_dim = hidden_dim, output_dim = x_dim,im_x=im_x, im_y=im_y,modes1=modes1,modes2=modes2)
         elif model_type == 'Freq_FNO':
-            self.Encoder = FNO_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y,modes1=modes1,modes2=modes2)
+            self.Encoder = FNO_Encoder(input_dim=3, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y,modes1=modes1,modes2=modes2)
             self.Decoder = FreqFNO_Decoder(latent_dim=latent_dim//2, hidden_dim = hidden_dim, output_dim = x_dim,im_x=im_x, im_y=im_y,modes1=10,modes2=6)
         elif model_type == 'FNO3D':
-            self.Encoder = FNO3D_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
+            self.Encoder = FNO3D_Encoder(input_dim=4, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
             self.Decoder = FNO3D_Decoder(latent_dim=latent_dim, hidden_dim=hidden_dim, output_dim=x_dim, im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
         elif model_type == 'Freq_FNO3D':
-            self.Encoder = FNO3D_Encoder(input_dim=x_dim, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
+            self.Encoder = FNO3D_Encoder(input_dim=4, hidden_dim=hidden_dim, latent_dim=latent_dim,im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
             self.Decoder = FreqFNO3D_Decoder(latent_dim=latent_dim//2, hidden_dim=hidden_dim,output_dim=x_dim,im_x=im_x, im_y=im_y, im_z=im_z, modes1=modes1, modes2=modes2, modes3=modes3)
 
     def reparameterization(self, mean, var):
@@ -94,7 +94,7 @@ class Model(nn.Module):
         elif self.model_type == "Freq_FNO3D":
             mean, var= self.Encoder(x)
             z = self.reparameterization_FreqNO3D(mean, var)
-            x_hat = self.Decoder(z)
+            x_hat = self.Decoder(z,output_im_x=self.im_x, output_im_y=self.im_y, output_im_z=self.im_z)
             return x_hat, mean, var
         else:
             mean, log_var = self.Encoder(x)
@@ -201,7 +201,7 @@ class FNO3D_Encoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
 
-        self.p = nn.Linear(input_dim + 3, hidden_dim)  # +3 for (x, y, z)
+        self.p = nn.Linear(input_dim, hidden_dim)  # +3 for (x, y, z)
 
         self.conv0 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
         self.conv1 = SpectralConv3d(hidden_dim, hidden_dim, modes1, modes2, modes3)
@@ -219,6 +219,7 @@ class FNO3D_Encoder(nn.Module):
 
     def forward(self, x):  # x: (B, D, H, W, C)
         grid = self.get_grid(x.shape, x.device)
+        #print("x shape: {}, grid shape: {}".format(x.shape, grid.shape))
         x = torch.cat((x, grid), dim=-1)  # (B, D, H, W, C+3)
         x = self.p(x)  # (B, D, H, W, hidden_dim)
         x = x.permute(0, 4, 1, 2, 3)  # (B, hidden_dim, D, H, W)
@@ -276,7 +277,7 @@ class FNO3D_Decoder(nn.Module):
         self.w2 = nn.Conv3d(hidden_dim, hidden_dim, 1)
         self.w3 = nn.Conv3d(hidden_dim, hidden_dim, 1)
 
-        self.q = MLP3D(hidden_dim, output_dim, latent_dim)
+        self.q = MLP3D(hidden_dim, 1, latent_dim)
         self.activation = nn.LeakyReLU(0.2)
 
     def forward(self, x):
@@ -332,7 +333,7 @@ class FreqFNO3D_Decoder(nn.Module):
         self.w1 = nn.Conv3d(self.hidden_dim, self.hidden_dim, 1)
         self.w2 = nn.Conv3d(self.hidden_dim, self.hidden_dim, 1)
         self.w3 = nn.Conv3d(self.hidden_dim, self.hidden_dim, 1)
-        self.q = MLP3D(hidden_dim, output_dim, latent_dim) # output channel is 1: u(x, y, z)
+        self.q = MLP3D(hidden_dim, 1, latent_dim) # output channel is 1: u(x, y, z)
         self.complex_activation_function = ComplexReLU(0.2)
         self.LeakyReLU = nn.LeakyReLU(0.2)
         
@@ -379,7 +380,7 @@ class FNO_Encoder(nn.Module):
         self.latent_dim = latent_dim
         self.activation_function = nn.LeakyReLU(0.2)
         #self.activation_function = F.tanh
-        self.p = nn.Linear(3, self.hidden_dim) # input channel is 3: (a(x, y), x, y)
+        self.p = nn.Linear(input_dim, self.hidden_dim) # input channel is 3: (a(x, y), x, y)
         self.conv0 = SpectralConv2d(self.hidden_dim, self.hidden_dim, self.modes1, self.modes2)
         self.conv1 = SpectralConv2d(self.hidden_dim, self.hidden_dim, self.modes1, self.modes2)
         self.conv2 = SpectralConv2d(self.hidden_dim, self.latent_dim, self.modes1, self.modes2)
@@ -535,12 +536,12 @@ class FreqFNO_Decoder(nn.Module):
         self.complex_activation_function = ComplexReLU(0.2)
         self.LeakyReLU = nn.LeakyReLU(0.2)
         
-    def forward(self, x, output_im_x = 50, output_im_y = 50, output_im_z = 50):
+    def forward(self, x, output_im_x = 50, output_im_y = 50):
         x = self.complex_activation_function(self.p(x))
 
-        #x = torch.fft.irfft2(x, s=(output_im_x, output_im_y),dim=(-2,-1))
-        x = torch.fft.irfftn(x, s=(output_im_x, output_im_y, output_im_z), dim=[-3,-2,-1])
-
+        x = torch.fft.irfft2(x, s=(output_im_x, output_im_y),dim=(-2,-1))
+        #x = torch.fft.irfftn(x, s=(output_im_x, output_im_y, output_im_z), dim=[-3,-2,-1])
+        #print("x shape: {}".format(x.shape))
         x1 = self.conv0(x)
         x1 = self.mlp0(x1)
         x2 = self.w0(x)
@@ -591,6 +592,7 @@ class SpectralConv2d(nn.Module):
     # Complex multiplication
     def compl_mul2d(self, input, weights):
         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        #print("input shape: {}, weights shape: {}".format(input.shape, weights.shape))
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
     def forward(self, x):
