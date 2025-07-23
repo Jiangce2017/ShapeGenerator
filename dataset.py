@@ -1,37 +1,29 @@
 import os
 from torch.utils.data import Dataset
+from utils import voxelize_stl
+import torch
+import trimesh
 
 class ABCDataset(Dataset):
-    def __init__(self, root_dir, size = 10000):
+    def __init__(self, root_dir, size=10000):
         """
         Args:
-            root_dir (str): Root folder of ABC dataset (e.g., 'abc/')
+            root_dir (str): Folder containing .stl files
         """
         self.root_dir = root_dir
-        self.stl_paths = []
-        self.ids = []
-
-        # Traverse each subfolder
-        for folder in os.listdir(root_dir):
-            if len(self.stl_paths) >= size:
-                break
-            folder_path = os.path.join(root_dir, folder)
-            if os.path.isdir(folder_path):
-                stl_files = [f for f in os.listdir(folder_path) if f.endswith('.stl')]
-                if len(stl_files) == 1:
-                    stl_path = os.path.join(folder_path, stl_files[0])
-                    self.stl_paths.append(stl_path)
-                    self.ids.append(folder)
-                elif len(stl_files) > 1:
-                    raise ValueError(f"Multiple STL files in {folder_path}")
-                # else: silently skip folders without .stl
-
+        self.modelPaths = [
+            os.path.join(root_dir, f)
+            for f in os.listdir(root_dir)
+            if f.endswith('.stl')
+        ][:size]
 
     def __len__(self):
-        return len(self.stl_paths)
+        return len(self.modelPaths)
 
     def __getitem__(self, idx):
-        return {
-            'id': self.ids[idx],
-            'stl_path': self.stl_paths[idx]
-        }
+        path = self.modelPaths[idx]
+        mesh = trimesh.load_mesh(path)
+        vox = voxelize_stl(path)  # shape: [D, H, W] numpy array
+        vox_tensor = torch.tensor(vox, dtype=torch.float32).unsqueeze(-1)  # → [D, H, W, 1]
+        print(f"Item voxelized with {len(mesh.faces)} faces")
+        return {'model': vox_tensor}

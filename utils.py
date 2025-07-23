@@ -19,19 +19,10 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
     v_loss = 0
     totalBatches = len(data_loader)
 
+    start_time = time.perf_counter()
     for batch_idx, batch in enumerate(data_loader):
-        stl_paths = batch['stl_path']  # list of STL file paths
-        ids = batch['id']              # list of shape IDs (strings)
-
-        # print("STL Paths:", stl_paths)
-        # print("IDs:", ids)
-
-        if len(stl_paths) == 0:
-            raise RuntimeError("No STL paths found in the current batch.")
-
-        start_time = time.perf_counter()
         #input_voxels = voxelize_batch_parrallel(stl_paths,grid_size=train_resolution)
-        input_voxels = voxelize_batch(stl_paths,grid_size=train_resolution)
+        input_voxels = batch['model'].to(device)
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
         print(f"Program executed in: {elapsed_time:.4f} seconds")
@@ -44,26 +35,27 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
         # input_for_fno = torch.from_numpy(np.stack(input_voxels)).unsqueeze(4).to(device)
         # optimizer.zero_grad()
 
-        # pred, mean, log_var = model(input_for_fno)
-        # loss, reproduction_loss, var_loss, mean_loss = loss_function(
-        #     input_for_fno.view(input_for_fno.size(0), -1),  # (B, x_dim^3)
-        #     pred.reshape(pred.size(0), -1),
-        #     mean,
-        #     log_var,
-        #     model_type
-        # )
+        pred, mean, log_var = model(input_voxels)
+        loss, reproduction_loss, var_loss, mean_loss = loss_function(
+            input_voxels.view(input_voxels.size(0), -1),  # (B, x_dim^3)
+            pred.reshape(pred.size(0), -1),
+            mean,
+            log_var,
+            model_type
+        )
 
-        # # Backprop and optimize
-        # loss.backward()
-        # optimizer.step()
+        # Backprop and optimize
+        loss.backward()
+        optimizer.step()
 
-        # # Accumulate losses
-        # overall_loss += loss.item()
-        # rep_loss += reproduction_loss.item()
-        # m_loss += mean_loss.item()
-        # v_loss += var_loss.item()
+        # Accumulate losses
+        overall_loss += loss.item()
+        rep_loss += reproduction_loss.item()
+        m_loss += mean_loss.item()
+        v_loss += var_loss.item()
 
         print(f"Finished batch {batch_idx + 1} / {totalBatches}")
+        start_time = time.perf_counter()
 
     # Normalize by number of batches
     num_batches = batch_idx + 1
@@ -253,6 +245,8 @@ def normalized_mesh_size(verts):
     scale = 1/(v_max-v_min)
     verts = (verts - v_mean)*scale
     return verts
+
+# rule out models with too many triangles
 
 def voxelize_stl(path, grid_size=64):
     mesh = trimesh.load(path, force='mesh')

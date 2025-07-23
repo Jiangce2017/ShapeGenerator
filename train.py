@@ -10,6 +10,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 import matplotlib.pyplot as plt
+from torch.utils.data import random_split
 
 from sklearn.model_selection import train_test_split
 
@@ -25,16 +26,17 @@ if __name__ == '__main__':
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
     #train_model = True
-    im_x = 10
-    im_y = 10
-    im_z = 10
+    im_x = 64
+    im_y = 64
+    im_z = 64
     x_dim = 2500
     modes1 = 10
     modes2 = 6
     modes3 = 6
     model_type = 'Freq_FNO3D'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
-    datasetSize = 512
+    dataset3D_path = './datasets/abc_low'
+    datasetSize = 64
     results_dir = './results'
     model_file = osp.join("checkpoints",model_type+"_model.pth")
     batch_size = 16
@@ -59,7 +61,7 @@ if __name__ == '__main__':
     # mat_data = load_mat(dataset_path)
     # dataset = mat_data['ShapeSpace']
     # dataset = dataset.astype(np.float32)
-    dataset = ABCDataset("./datasets/abc_0000_stl2_v00", datasetSize)
+    dataset = ABCDataset(dataset3D_path, datasetSize)
     #input_dataset = dataset[:512]
 
 
@@ -69,7 +71,11 @@ if __name__ == '__main__':
     #     output_dataset = torch.from_numpy(output_dataset)
     # combined_dataset = CombinedDataset(input_dataset, output_dataset)
 
-    train_dataset, test_dataset = train_test_split(dataset, test_size=0.1, random_state=42)
+    # train_dataset, test_dataset = train_test_split(dataset, test_size=0.1, random_state=42)
+    train_size = int(0.9 * len(dataset))
+    test_size = len(dataset) - train_size
+
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
