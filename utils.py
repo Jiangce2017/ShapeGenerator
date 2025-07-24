@@ -19,13 +19,10 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
     v_loss = 0
     totalBatches = len(data_loader)
 
-    start_time = time.perf_counter()
     for batch_idx, batch in enumerate(data_loader):
+        start_time = time.perf_counter()
         #input_voxels = voxelize_batch_parrallel(stl_paths,grid_size=train_resolution)
         input_voxels = batch['model'].to(device)
-        end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-        print(f"Program executed in: {elapsed_time:.4f} seconds")
 
         # if len(input_voxels) == 0:
         #     raise RuntimeError("All voxelization failed. Check your STL files or paths.")
@@ -54,8 +51,10 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
         m_loss += mean_loss.item()
         v_loss += var_loss.item()
 
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        print(f"Program executed in: {elapsed_time:.4f} seconds")
         print(f"Finished batch {batch_idx + 1} / {totalBatches}")
-        start_time = time.perf_counter()
 
     # Normalize by number of batches
     num_batches = batch_idx + 1

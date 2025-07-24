@@ -13,9 +13,10 @@ class ABCDataset(Dataset):
         """
         self.root_dir = root_dir
         self.voxelized = voxelized
+        self.voxels = []
         if voxelized:
-            self.modelPaths = [
-                os.path.join(root_dir, f)
+            self.voxels = [
+                np.load(os.path.join(root_dir, f))
                 for f in os.listdir(root_dir)
                 if f.endswith('.npy')
             ]
@@ -27,15 +28,17 @@ class ABCDataset(Dataset):
             ][:size]
 
     def __len__(self):
+        if self.voxelized:
+            return len(self.voxels)
         return len(self.modelPaths)
 
     def __getitem__(self, idx):
-        path = self.modelPaths[idx]
         if self.voxelized:
-            vox = np.load(self.modelPaths[idx])
+            vox = self.voxels[idx]
             vox_tensor = torch.tensor(vox, dtype=torch.float32).unsqueeze(-1)
             print("loaded voxel")
         else:
+            path = self.modelPaths[idx]
             mesh = trimesh.load_mesh(path)
             vox = voxelize_stl(path)  # shape: [D, H, W] numpy array
             vox_tensor = torch.tensor(vox, dtype=torch.float32).unsqueeze(-1)  # → [D, H, W, 1]

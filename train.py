@@ -41,8 +41,8 @@ if __name__ == '__main__':
     model_file = osp.join("checkpoints",model_type+"_model.pth")
     batch_size = 16
     train_resolution  = 10
-    hidden_dim = 32
-    latent_dim = 32
+    hidden_dim = 16
+    latent_dim = 16
     lr = 1e-3
     epochs = 1000
 
