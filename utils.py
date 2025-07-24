@@ -6,6 +6,8 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import h5py
 import csv
+import os
+os.environ['MPLCONFIGDIR'] = "/scratch/jc14407/.config/matplotlib"
 
 def train_model(data_loader, model,device,optimizer,x_dim,model_type):
     model.train()
@@ -13,11 +15,11 @@ def train_model(data_loader, model,device,optimizer,x_dim,model_type):
     rep_loss = 0
     m_loss = 0
     v_loss = 0
-    for batch_idx, (input, output) in enumerate(data_loader):
+    for batch_idx, input in enumerate(data_loader):
         #x = x.view(batch_size, x_dim)
         input = input.to(device)
-        output = output.float()
-        output = output.to(device)
+        # output = output.float()
+        # output = output.to(device)
 
         optimizer.zero_grad()
 
@@ -39,10 +41,10 @@ def test_model(data_loader, model,device,x_dim,model_type):
     rep_loss = 0
     m_loss = 0
     v_loss = 0
-    for batch_idx, (input, output) in enumerate(data_loader):
+    for batch_idx, input in enumerate(data_loader):
         input = input.to(device)
-        output = output.float()
-        output = output.to(device)
+        # output = output.float()
+        # output = output.to(device)
         pred, mean, log_var = model(input)
         loss,reproduction_loss, var_loss, mean_loss = loss_function(input.view(-1,x_dim), pred.view(-1,x_dim), mean, log_var,model_type)
         overall_loss += loss.item()
