@@ -35,7 +35,7 @@ if __name__ == '__main__':
     modes3 = 6
     model_type = 'Freq_FNO3D'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
-    dataset3D_path = './datasets/abc_low'
+    dataset3D_path = './datasets/abc_voxelized'
     datasetSize = 64
     results_dir = './results'
     model_file = osp.join("checkpoints",model_type+"_model.pth")
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     # mat_data = load_mat(dataset_path)
     # dataset = mat_data['ShapeSpace']
     # dataset = dataset.astype(np.float32)
-    dataset = ABCDataset(dataset3D_path, datasetSize)
+    dataset = ABCDataset(dataset3D_path, datasetSize, voxelized = True)
     #input_dataset = dataset[:512]
 
 
