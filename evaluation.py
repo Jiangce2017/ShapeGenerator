@@ -59,8 +59,10 @@ if __name__ == '__main__':
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
         
-    model_file = osp.join("checkpoints","save_"+model_type+"_model.pth")
-    loaded_model = torch.load(model_file)
+    model_file = osp.join("checkpoints","gpu_"+model_type+"_model.pth")
+    loaded_model = torch.load(model_file,map_location=torch.device('cpu'))
+    loaded_model.device = device
+    loaded_model = loaded_model.to(device)
     loaded_model.eval()
     with torch.no_grad():
         for batch_idx, (input, output) in enumerate(tqdm(train_loader)):
