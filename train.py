@@ -67,13 +67,19 @@ if __name__ == '__main__':
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=True, **kwargs)
     test_loader  = DataLoader(dataset=test_dataset,  batch_size=batch_size, shuffle=False,drop_last=False, **kwargs)
-        
-    model = Model(x_dim, hidden_dim, latent_dim,device,model_type,im_x,im_y,modes1,modes2).to(device)
+
+    if osp.exists(model_file):
+        print("Loading model from", model_file)
+        model = torch.load(model_file, map_location=device)
+    else:
+        print("No pre-trained model found, creating a new one")
+        # Create a new model instance
+        model = Model(x_dim, hidden_dim, latent_dim, device, model_type, im_x, im_y, modes1, modes2).to(device)
 
     print("Start training...")
     optimizer = Adam(model.parameters(), lr=lr)
     for epoch in range(epochs):
-        overall_loss, rep_loss, m_loss, v_loss = train_model(train_loader,model,device,optimizer,x_dim,model_type)
+        overall_loss, rep_loss, v_loss, m_loss, = train_model(train_loader,model,device,optimizer,x_dim,model_type)
         print("\tEpoch", epoch + 1, "complete!", "\tAverage Train Loss: ", overall_loss)
         train_logger.log({
         'ep': epoch,             
