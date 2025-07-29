@@ -19,23 +19,19 @@ from utils import loss_function, load_mat, show_image, CombinedDataset,Logger,tr
 from dataset import ABCDataset
 
 if __name__ == '__main__':
-
-    """
-        A simple implementation of Gaussian MLP Encoder and Decoder
-    """
     cuda = False
     device = torch.device("cuda" if cuda else "cpu")
     #train_model = True
-    im_x = 64
-    im_y = 64
-    im_z = 64
+    im_x = 10
+    im_y = 10
+    im_z = 10
     x_dim = 2500
     modes1 = 10
     modes2 = 6
     modes3 = 6
     model_type = 'Freq_FNO3D'
     dataset_path = './datasets/Wang/ShapeSpace.mat'
-    dataset3D_path = './datasets/abc_voxelized'
+    dataset3D_path = './datasets/abc_voxelized_10'
     datasetSize = 64
     results_dir = './results'
     model_file = osp.join("checkpoints",model_type+"_model.pth")

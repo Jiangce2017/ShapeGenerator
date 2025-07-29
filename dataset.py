@@ -36,7 +36,6 @@ class ABCDataset(Dataset):
         if self.voxelized:
             vox = self.voxels[idx]
             vox_tensor = torch.tensor(vox, dtype=torch.float32).unsqueeze(-1)
-            print("loaded voxel")
         else:
             path = self.modelPaths[idx]
             mesh = trimesh.load_mesh(path)

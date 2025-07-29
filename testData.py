@@ -3,24 +3,51 @@ import os
 import matplotlib.pyplot as plt
 import shutil
 import numpy as np
-from utils import voxelize_stl
+from utils import voxelize_stl, normalized_mesh_size
 
-root_dir = "./datasets/abc_low"
-root_des = "./datasets/abc_voxelized"
+root_dir = "./datasets/abc_0000_stl2_v00"
+root_des = "./datasets/abc_voxelized_10"
+if os.path.exists(root_des):
+    shutil.rmtree(root_des)
+os.makedirs(root_des, exist_ok=True)
+grid_size = 10
 
 triangle_counts = []
 count = 1
 countUnder50000 = 0
 
-for file in os.listdir(root_dir):
-    stl_path = os.path.join(root_dir, file)
-    mesh = trimesh.load_mesh(stl_path)
-    vox = voxelize_stl(stl_path)
-    file = file.split('.')[0]
-    stl_des = os.path.join(root_des, file)
-    np.save(stl_des, vox)
-    print(f"{count}: voxelized with {len(mesh.faces)} faces")
-    count += 1
+for stl_folder in os.listdir(root_dir):
+    files = os.path.join(root_dir, stl_folder)
+    for f in os.listdir(files):
+        if not f.endswith('.stl'):
+            continue
+        stl_path = os.path.join(files, f)
+        mesh = trimesh.load_mesh(stl_path)
+        triangle_count = len(mesh.faces)
+        triangle_counts.append(triangle_count)
+        
+        if triangle_count < 50000:
+            countUnder50000 += 1
+            vox = voxelize_stl(stl_path,grid_size=grid_size)
+            file = f.split('.')[0]
+            stl_des = os.path.join(root_des, f"{file}_grid{grid_size}.npy")
+            np.save(stl_des, vox)
+            print(f"{countUnder50000}: voxelized with {triangle_count} faces")
+
+        else:
+            print(f"{count}: skipped {f} with {triangle_count} faces")
+        count += 1
+            
+
+    # stl_path = os.path.join(root_dir, file)
+
+    # mesh = trimesh.load_mesh(stl_path)
+    # vox = voxelize_stl(stl_path,grid_size=grid_size)
+    # file = file.split('.')[0]
+    # stl_des = os.path.join(root_des, file)
+    # np.save(stl_des, vox)
+    # print(f"{count}: voxelized with {len(mesh.faces)} faces")
+    # count += 1
 
 # plt.figure(figsize=(10, 6))
 # plt.hist(triangle_counts, bins=50, color='skyblue', edgecolor='black')
