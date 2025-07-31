@@ -6,7 +6,103 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import h5py
 import csv
+import trimesh
 import os
+import time
+
+
+def loss_function(x, x_hat, mean, log_var,model_type):
+    reproduction_loss = nn.functional.binary_cross_entropy(x_hat,x, reduction='mean')
+    var_loss = torch.mean(torch.exp(log_var))
+    mean_loss = 1/(1+torch.exp(-16*(torch.max(mean.pow(2))-1)))
+    # print("x_hat max: {}, x_hat min: {}".format(torch.max(x_hat), torch.min(x_hat) ))
+    # print("mean max: {}, mean min: {}".format(torch.max(mean), torch.min(mean) ))
+    # print("mean_loss: {}, var_loss: {}".format(mean_loss,var_loss))
+    if model_type == 'FNO3D' or model_type == 'Freq_FNO3D':
+        total_loss = reproduction_loss + var_loss + mean_loss
+    else:
+        KLD = - 0.5 * torch.mean(1+ log_var - mean.pow(2) - log_var.exp())
+        total_loss = reproduction_loss + KLD
+    return total_loss, reproduction_loss, var_loss, torch.max(torch.abs(mean))
+    
+
+def train_3D_model(data_loader, model, device, optimizer, train_resolution, model_type):
+    model.train()
+    overall_loss = 0
+    rep_loss = 0
+    m_loss = 0
+    v_loss = 0
+    totalBatches = len(data_loader)
+    batch_running_time = []
+
+    for batch_idx, batch in enumerate(data_loader):
+        start_time = time.perf_counter()
+        #input_voxels = voxelize_batch_parrallel(stl_paths,grid_size=train_resolution)
+        input_voxels = batch.to(device)
+
+        # if len(input_voxels) == 0:
+        #     raise RuntimeError("All voxelization failed. Check your STL files or paths.")
+        # else :
+        #     print("batch voxelized")
+
+        # input_for_fno = torch.from_numpy(np.stack(input_voxels)).unsqueeze(4).to(device)
+        optimizer.zero_grad()
+
+        pred, mean, log_var = model(input_voxels)
+        batch_size = input_voxels.size(0)
+        loss, reproduction_loss, var_loss, mean_loss = loss_function(
+            input_voxels.view(batch_size, -1),  # (B, x_dim^3)
+            pred.reshape(batch_size, -1),
+            mean,
+            log_var,
+            model_type
+        )
+
+        # Backprop and optimize
+        loss.backward()
+        optimizer.step()
+
+        # Accumulate losses
+        overall_loss += loss.item()
+        rep_loss += reproduction_loss.item()
+        m_loss += mean_loss.item()
+        v_loss += var_loss.item()
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        batch_running_time.append(elapsed_time)
+        #print(f"Finished batch {batch_idx + 1} / {totalBatches}")
+
+    # Normalize by number of batches
+    average_time = np.mean(batch_running_time)
+    print(f"Average time per batch: {average_time:.4f} seconds")
+    num_batches = batch_idx + 1
+    return overall_loss / num_batches, rep_loss / num_batches, v_loss / num_batches, m_loss / num_batches
+ 
+def test_3D_model(data_loader, model,device,train_resolution,model_type):
+    model.eval()  
+    overall_loss = 0
+    rep_loss = 0
+    m_loss = 0
+    v_loss = 0
+
+    for batch_idx, batch in enumerate(data_loader):
+        # stl_paths = batch['stl_path']
+        # output = batch['output'].float().to(device)
+        # input_voxels = voxelize_batch(stl_paths, grid_size=x_dim, num_jobs=4)
+        # input_voxels = input_voxels.to(device)
+
+        input_voxels = batch.to(device)
+
+        pred, mean, log_var = model(input_voxels)
+        batch_size = input_voxels.size(0)
+        loss,reproduction_loss, var_loss, mean_loss = loss_function(input_voxels.view(batch_size,-1), pred.view(batch_size,-1), mean, log_var,model_type)
+        overall_loss += loss.item()
+        rep_loss += reproduction_loss.item()
+        m_loss += mean_loss.item()
+        v_loss += var_loss.item()
+    return overall_loss / (batch_idx+1), rep_loss/(batch_idx+1), v_loss/(batch_idx+1), m_loss/(batch_idx+1)
+
 
 def train_model(data_loader, model,device,optimizer,x_dim,model_type):
     model.train()
@@ -15,10 +111,7 @@ def train_model(data_loader, model,device,optimizer,x_dim,model_type):
     m_loss = 0
     v_loss = 0
     for batch_idx, input in enumerate(data_loader):
-        #x = x.view(batch_size, x_dim)
         input = input.to(device)
-        # output = output.float()
-        # output = output.to(device)
 
         optimizer.zero_grad()
 
@@ -42,8 +135,6 @@ def test_model(data_loader, model,device,x_dim,model_type):
     v_loss = 0
     for batch_idx, input in enumerate(data_loader):
         input = input.to(device)
-        # output = output.float()
-        # output = output.to(device)
         pred, mean, log_var = model(input)
         loss,reproduction_loss, var_loss, mean_loss = loss_function(input.view(-1,x_dim), pred.view(-1,x_dim), mean, log_var,model_type)
         overall_loss += loss.item()
@@ -91,33 +182,6 @@ def show_image(x):
         plt.imshow(x,cmap=cmap)
         plt.show()
 
-def loss_function_NO(x, x_hat, mean, log_var):
-    reproduction_loss = nn.functional.binary_cross_entropy(x_hat,x, reduction='mean')
-    #reproduction_loss =  F.mse_loss(x, x_hat, reduction='mean') 
-    var_loss = torch.mean(torch.exp(log_var))
-    mean_loss = 1/(1+torch.exp(-16*(torch.max(mean.pow(2))-1)))
-    KLD = - 0.5 * torch.mean(1+ log_var - mean.pow(2) - log_var.exp())
-    print("x_hat max: {}, x_hat min: {}".format(torch.max(x_hat), torch.min(x_hat) ))
-    print("mean max: {}, mean min: {}".format(torch.max(mean), torch.min(mean) ))
-    print("mean_loss: {}, var_loss: {}".format(mean_loss,var_loss))
-    
-    total_loss = reproduction_loss + var_loss + mean_loss
-    return total_loss, reproduction_loss, var_loss, torch.max(torch.abs(mean))
-
-def loss_function(x, x_hat, mean, log_var,model_type):
-    reproduction_loss = nn.functional.binary_cross_entropy(x_hat,x, reduction='mean')
-    KLD = - 0.5 * torch.mean(1+ log_var - mean.pow(2) - log_var.exp())
-    var_loss = torch.mean(torch.exp(log_var))
-    mean_loss = 1/(1+torch.exp(-16*(torch.max(mean.pow(2))-1)))
-    # print("x_hat max: {}, x_hat min: {}".format(torch.max(x_hat), torch.min(x_hat) ))
-    # print("mean max: {}, mean min: {}".format(torch.max(mean), torch.min(mean) ))
-    # print("mean_loss: {}, var_loss: {}".format(mean_loss,var_loss))
-    if model_type == 'FNO' or model_type == 'Freq_FNO':
-        total_loss = reproduction_loss + var_loss + mean_loss
-    else:
-        total_loss = reproduction_loss + KLD
-    return total_loss, reproduction_loss, var_loss, torch.max(torch.abs(mean))
-    
 def load_mat(filename):
     with h5py.File(filename, 'r') as f:
         data = {}
@@ -163,3 +227,45 @@ def plot_ternary(simplex_points,loaded_model,im_x, im_y,latent_dim, output_file)
         ax.imshow(interpolate_list[idx].view(im_x, im_y).cpu().detach().numpy(),cmap=cmap, vmin=0, vmax=1.0,extent=(tx, tx + 28, ty, ty + 28))
     ax.axis("off")   
     fig.savefig(output_file,dpi = 450)
+
+def normalized_mesh_size(verts):
+    v_min = np.min(verts,axis=0,keepdims=True)
+    v_max = np.max(verts,axis=0,keepdims=True)
+    v_mean = np.mean(verts,axis=0,keepdims=True)
+    scale = 1/(v_max-v_min)
+    verts = (verts - v_mean)*scale
+    return verts
+
+# rule out models with too many triangles
+
+def voxelize_stl(path, grid_size=64):
+    mesh = trimesh.load(path, force='mesh')
+    # ## normalize mesh
+    verts = normalized_mesh_size(mesh.vertices)
+    mesh.vertices = verts
+
+    vox = mesh.voxelized(pitch=1.0 / (grid_size-1)).matrix.astype(np.float32)
+    
+
+    #Pad or crop to grid_size
+    vox = np.pad(vox, ((0, max(0, grid_size - vox.shape[0])),
+                       (0, max(0, grid_size - vox.shape[1])),
+                       (0, max(0, grid_size - vox.shape[2]))),
+                 mode='constant', constant_values=0)
+    vox = vox[:grid_size, :grid_size, :grid_size]
+
+    # vox = np.zeros((grid_size,grid_size,grid_size))
+    #mesh._cache.clear()
+    del mesh 
+    #print("vox shape: {}".format(vox.shape))
+    return vox
+
+
+def voxelize_batch(stl_paths, grid_size=64):
+   return [voxelize_stl(path, grid_size) for path in stl_paths]
+
+def voxelize_batch_parrallel(stl_paths, grid_size=64, num_jobs = os.cpu_count() // 2):
+    voxels = Parallel(n_jobs=-1)(
+        delayed(voxelize_stl)(path, grid_size) for path in stl_paths
+    )
+    return voxels
