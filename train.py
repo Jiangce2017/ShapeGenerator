@@ -30,9 +30,10 @@ if __name__ == '__main__':
     modes2 = 6
     modes3 = 6
     model_type = 'Freq_FNO3D'
+
+
     dataset_path = './datasets/Wang/ShapeSpace.mat'
     dataset3D_path = './datasets/abc_voxelized_10'
-    datasetSize = 64
     results_dir = './results'
     model_file = osp.join("checkpoints",model_type+"_model.pth")
     batch_size = 16
@@ -44,20 +45,20 @@ if __name__ == '__main__':
 
     ## setup logger
 
-    # train_logger = Logger(
-    #     osp.join(results_dir, model_type+'_train.log'),
-    #     ['ep', 'train_loss','train_rep','train_var','train_mean']
-    # )
-    # test_logger = Logger(
-    #     osp.join(results_dir, model_type+'_test.log'),
-    #     ['ep', 'test_loss','test_rep','test_var','test_mean']
-    # )
+    train_logger = Logger(
+        osp.join(results_dir, model_type+'_train.log'),
+        ['ep', 'train_loss','train_rep','train_var','train_mean']
+    )
+    test_logger = Logger(
+        osp.join(results_dir, model_type+'_test.log'),
+        ['ep', 'test_loss','test_rep','test_var','test_mean']
+    )
     kwargs = {'num_workers': 1, 'pin_memory': False} 
 
     # mat_data = load_mat(dataset_path)
     # dataset = mat_data['ShapeSpace']
     # dataset = dataset.astype(np.float32)
-    dataset = ABCDataset(dataset3D_path, datasetSize, voxelized = True)
+    dataset = ABCDataset(dataset3D_path, voxelized = True)
     #input_dataset = dataset[:512]
 
 

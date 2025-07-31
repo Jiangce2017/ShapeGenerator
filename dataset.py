@@ -6,7 +6,7 @@ import trimesh
 import numpy as np
 
 class ABCDataset(Dataset):
-    def __init__(self, root_dir, size=10000, voxelized = False):
+    def __init__(self, root_dir, voxelized = False):
         """
         Args:
             root_dir (str): Folder containing .stl files
@@ -25,7 +25,7 @@ class ABCDataset(Dataset):
                 os.path.join(root_dir, f)
                 for f in os.listdir(root_dir)
                 if f.endswith('.stl')
-            ][:size]
+            ]
 
     def __len__(self):
         if self.voxelized:
@@ -42,4 +42,4 @@ class ABCDataset(Dataset):
             vox = voxelize_stl(path)  # shape: [D, H, W] numpy array
             vox_tensor = torch.tensor(vox, dtype=torch.float32).unsqueeze(-1)  # → [D, H, W, 1]
             print(f"Item voxelized with {len(mesh.faces)} faces")
-        return {'model': vox_tensor}
+        return vox_tensor

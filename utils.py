@@ -18,11 +18,12 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
     m_loss = 0
     v_loss = 0
     totalBatches = len(data_loader)
+    batch_running_time = []
 
     for batch_idx, batch in enumerate(data_loader):
         start_time = time.perf_counter()
         #input_voxels = voxelize_batch_parrallel(stl_paths,grid_size=train_resolution)
-        input_voxels = batch['model'].to(device)
+        input_voxels = batch.to(device)
 
         # if len(input_voxels) == 0:
         #     raise RuntimeError("All voxelization failed. Check your STL files or paths.")
@@ -30,7 +31,7 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
         #     print("batch voxelized")
 
         # input_for_fno = torch.from_numpy(np.stack(input_voxels)).unsqueeze(4).to(device)
-        # optimizer.zero_grad()
+        optimizer.zero_grad()
 
         pred, mean, log_var = model(input_voxels)
         loss, reproduction_loss, var_loss, mean_loss = loss_function(
@@ -53,10 +54,12 @@ def train_3D_model(data_loader, model, device, optimizer, train_resolution, mode
 
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
-        print(f"Program executed in: {elapsed_time:.4f} seconds")
-        print(f"Finished batch {batch_idx + 1} / {totalBatches}")
+        batch_running_time.append
+        #print(f"Finished batch {batch_idx + 1} / {totalBatches}")
 
     # Normalize by number of batches
+    average_time = np.mean(batch_running_time)
+    print(f"Average time per batch: {average_time:.4f} seconds")
     num_batches = batch_idx + 1
     return overall_loss / num_batches, rep_loss / num_batches, v_loss / num_batches, m_loss / num_batches
  
@@ -147,47 +150,25 @@ class Logger(object):
         self.logger.writerow(write_values)
         self.log_file.flush()
 
-class CombinedDataset(Dataset):
-    def __init__(self, input_data, output_data):
-        self.input_data = input_data
-        self.output_data = output_data
-    
-    def __len__(self):
-        return min(len(self.input_data), len(self.output_data))
-    
-    def __getitem__(self, idx):
-        return self.input_data[idx], self.output_data[idx]
-
 def show_image(x):
         fig = plt.figure()
         cmap = 'Greens'
         plt.imshow(x,cmap=cmap)
         plt.show()
 
-def loss_function_NO(x, x_hat, mean, log_var):
-    reproduction_loss = nn.functional.binary_cross_entropy(x_hat,x, reduction='mean')
-    #reproduction_loss =  F.mse_loss(x, x_hat, reduction='mean') 
-    var_loss = torch.mean(torch.exp(log_var))
-    mean_loss = 1/(1+torch.exp(-16*(torch.max(mean.pow(2))-1)))
-    KLD = - 0.5 * torch.mean(1+ log_var - mean.pow(2) - log_var.exp())
-    print("x_hat max: {}, x_hat min: {}".format(torch.max(x_hat), torch.min(x_hat) ))
-    print("mean max: {}, mean min: {}".format(torch.max(mean), torch.min(mean) ))
-    print("mean_loss: {}, var_loss: {}".format(mean_loss,var_loss))
-    
-    total_loss = reproduction_loss + var_loss + mean_loss
-    return total_loss, reproduction_loss, var_loss, torch.max(torch.abs(mean))
 
 def loss_function(x, x_hat, mean, log_var,model_type):
     reproduction_loss = nn.functional.binary_cross_entropy(x_hat,x, reduction='mean')
-    KLD = - 0.5 * torch.mean(1+ log_var - mean.pow(2) - log_var.exp())
+    
     var_loss = torch.mean(torch.exp(log_var))
     mean_loss = 1/(1+torch.exp(-16*(torch.max(mean.pow(2))-1)))
     # print("x_hat max: {}, x_hat min: {}".format(torch.max(x_hat), torch.min(x_hat) ))
     # print("mean max: {}, mean min: {}".format(torch.max(mean), torch.min(mean) ))
     # print("mean_loss: {}, var_loss: {}".format(mean_loss,var_loss))
-    if model_type == 'FNO' or model_type == 'Freq_FNO' or model_type == 'FNO3D':
+    if  model_type == 'Freq_FNO3D' or model_type == 'FNO3D':
         total_loss = reproduction_loss + var_loss + mean_loss
     else:
+        KLD = - 0.5 * torch.mean(1+ log_var - mean.pow(2) - log_var.exp())
         total_loss = reproduction_loss + KLD
     return total_loss, reproduction_loss, var_loss, torch.max(torch.abs(mean))
     
