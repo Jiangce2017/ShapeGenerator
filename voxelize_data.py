@@ -8,13 +8,13 @@ from utils import voxelize_stl, normalized_mesh_size
 
 dataset_root_dir = '/scratch/jc14407/datasets'
 root_dir = osp.join(dataset_root_dir, 'abc_0000_stl2_v00')
-root_des = osp.join(dataset_root_dir, 'abc_voxelized_40')
+root_des = osp.join(dataset_root_dir, 'abc_voxelized_20')
 face_count_threshold = 50000  # Set your threshold for face count
 
 if os.path.exists(root_des):
     shutil.rmtree(root_des)
 os.makedirs(root_des, exist_ok=True)
-grid_size = 40
+grid_size = 20
 
 triangle_counts = []
 count = 1
